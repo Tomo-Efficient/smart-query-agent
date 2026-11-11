@@ -483,10 +483,11 @@ FROM cur, prev"""
         plan = "汇总统计期内有效保单的确认保费"
 
     else:
-        return GenResult(
-            mode="mock",
-            needs_clarification=True,
-            clarification="离线模板没有覆盖这种问法（模板只认固定说法）。配置 DEEPSEEK_API_KEY 后，就可以用任意自然语言提问。",
-        )
+        metric_words = ("保费", "件数", "保单", "退保", "赔付", "占比", "趋势", "渠道", "险种", "产品", "收入")
+        if not any(w in q for w in metric_words):
+            clarification = "你想看哪个指标（保费 / 件数 / 退保率 / 赔付率）、哪个时间范围、按什么维度拆？补充一句我就能查。"
+        else:
+            clarification = "离线模板没有覆盖这种问法（模板只认固定说法）。配置 DEEPSEEK_API_KEY 后，就可以用任意自然语言提问。"
+        return GenResult(mode="mock", needs_clarification=True, clarification=clarification)
 
     return GenResult(sql=sql.strip(), plan=plan, assumptions=assumptions, mode="mock")
