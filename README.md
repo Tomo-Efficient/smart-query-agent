@@ -14,6 +14,10 @@
 
 ---
 
+## 面试演示
+
+3 分钟怎么讲、会被追问什么、哪些数字能说哪些不能说：[docs/interview-script.md](docs/interview-script.md)。
+
 ## 快速开始
 
 ```bash
