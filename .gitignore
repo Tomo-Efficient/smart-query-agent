@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.DS_Store
+
+# 生成物：CSV 原始分片可随时重建（warehouse.duckdb 已入库，便于 clone 即跑）
+data/raw/
+
+# 评测历史只保留 latest 一份
+eval/results/report-*.json
+eval/results/report-*.md
+!eval/results/report-latest.md
+!eval/results/report-latest.json
+eval/results/ablation/*/report-*.json
+!eval/results/ablation/*/report-latest.json

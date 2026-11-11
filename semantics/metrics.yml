@@ -1,0 +1,157 @@
+version: 1
+# 第二层：指标知识库（口径、算法、易错点、替代定义）
+# 同一指标存在多种算法时，必须显式声明"默认口径"，并在答案里说明。
+cards:
+  - id: metric.premium_income
+    kind: metric
+    title: 保费收入
+    tags: [保费, 保费收入, 收入, 规模, 月度, 环比, 同比]
+    text: |
+      默认口径：按保单月度确认的保费，SUM(dwd_premium_month.premium)，且只统计
+      policy_status='有效' 的保单。粒度到月，按 stat_month 归属。
+      不剔除空保费（COALESCE 为 0），不与签单保费混用。
+      注意：dws_* 宽表是"全口径"（含退保/满期历史月），与本口径差 2-3%，不可混用。
+    meta:
+      unit: 元
+      grain: 月 / 渠道 / 险种 / 机构
+      default_sql: |
+        SELECT p.stat_month, SUM(COALESCE(p.premium, 0)) AS premium
+        FROM dwd_premium_month p
+        JOIN dwd_policy dp USING (policy_id)
+        WHERE dp.policy_status = '有效'
+        GROUP BY 1
+      alternatives:
+        - name: 全口径保费
+          note: 不过滤 policy_status，包含退保与满期保单在有效期内确认的保费；比默认口径高约 2-3%。
+        - name: 签单保费
+          note: SUM(dwd_policy.annual_premium)，按 sign_date 归属，是年化口径，不能与月度保费直接比较。
+      caveats:
+        - 与"签单保费"是不同指标，问"保费收入"默认用本口径。
+        - 跨月比较时先确认两个月都完整；数据截止 2026-06-30。
+
+  - id: metric.written_premium
+    kind: metric
+    title: 签单保费
+    tags: [签单, 新单, 承保, 年化保费, 保费]
+    text: |
+      签单口径：SUM(dwd_policy.annual_premium)，按 sign_date（签单日）归属。
+      表示新承保保单的年化保费规模，不是当年实收保费，不能与月度保费收入直接相加或比较。
+    meta:
+      unit: 元
+      grain: 签单日 / 月 / 渠道 / 险种
+      default_sql: |
+        SELECT DATE_TRUNC('month', sign_date) AS m, SUM(annual_premium)
+        FROM dwd_policy GROUP BY 1
+      caveats:
+        - 年化口径；一张 60 期保单的 annual_premium 只计一次。
+
+  - id: metric.policy_count
+    kind: metric
+    title: 保单件数
+    tags: [件数, 保单数, 单量, 新单件数]
+    text: |
+      保单件数：COUNT(DISTINCT policy_id)。按 sign_date 归属时为新单件数；
+      按 policy_status='有效' 过滤时为有效保单件数（存量）。
+    meta:
+      unit: 件
+      grain: 日 / 月 / 渠道 / 险种
+      default_sql: |
+        SELECT COUNT(DISTINCT policy_id) FROM dwd_policy
+      caveats:
+        - 存量（有效）与新单（按签单日）是两种口径，问题里出现"现在/当前"时通常指存量。
+
+  - id: metric.avg_premium
+    kind: metric
+    title: 件均保费
+    tags: [件均, 均价, 单均, 平均保费]
+    text: |
+      件均保费 = 保费 / 保单件数。默认：有效保单的月度保费收入 / 当月有保费确认的保单数。
+      分母必须与分子同口径（同时间、同渠道、同状态），否则件均会失真。
+    meta:
+      unit: 元/件
+      grain: 月 / 渠道 / 险种
+      default_sql: |
+        SELECT p.stat_month,
+               SUM(COALESCE(p.premium, 0)) / NULLIF(COUNT(DISTINCT p.policy_id), 0) AS avg_premium
+        FROM dwd_premium_month p
+        JOIN dwd_policy dp USING (policy_id)
+        WHERE dp.policy_status = '有效'
+        GROUP BY 1
+      caveats:
+        - nullif 防除零；不要用 AVG(premium)，那是"单均月保费"的另一种算法。
+
+  - id: metric.surrender_rate
+    kind: metric
+    title: 退保率
+    tags: [退保率, 退保, 流失]
+    text: |
+      默认口径：退保件数 / 有效保单件数。退保件数来自 dwd_surrender，必须
+      COUNT(DISTINCT policy_id) 去重（存在重复推送）；分母用同期有效保单件数。
+      替代口径：退保金额 / 保费收入，两者数值差异大，回答时必须说明用的是哪一种。
+    meta:
+      unit: 百分比
+      grain: 月 / 渠道 / 险种
+      default_sql: |
+        WITH s AS (
+          SELECT DATE_TRUNC('month', surrender_date) AS m,
+                 COUNT(DISTINCT policy_id) AS sur_cnt
+          FROM dwd_surrender GROUP BY 1
+        ), a AS (
+          SELECT DATE_TRUNC('month', effective_date) AS m,
+                 COUNT(DISTINCT policy_id) AS active_cnt
+          FROM dwd_policy WHERE policy_status = '有效' GROUP BY 1
+        )
+        SELECT s.m, s.sur_cnt::DOUBLE / NULLIF(a.active_cnt, 0) AS surrender_rate
+        FROM s JOIN a USING (m)
+      caveats:
+        - 分母口径（有效/期初/保费）不同，退保率可能差一倍；默认用有效件数。
+        - 重复推送会导致分子虚高，必须 DISTINCT。
+
+  - id: metric.claim_ratio
+    kind: metric
+    title: 赔付率
+    tags: [赔付率, 理赔, 赔付, 赔款]
+    text: |
+      赔付率 = 赔付金额 / 保费收入。赔付金额取 SUM(dwd_claim.claim_amount)，
+      保费取默认的"有效保单保费收入"口径；两者都按自然月归属。
+    meta:
+      unit: 百分比
+      grain: 月 / 渠道 / 险种
+      default_sql: |
+        SELECT DATE_TRUNC('month', c.claim_date) AS m, SUM(c.claim_amount) AS claim_amt
+        FROM dwd_claim c GROUP BY 1
+      caveats:
+        - 分子按理赔日期、分母按保费归属月，属于近似口径，需在答案中说明。
+
+  - id: metric.mom
+    kind: metric
+    title: 环比
+    tags: [环比, 增长, 下降, MoM]
+    text: |
+      环比 = 本月 / 上月 - 1。按自然月对齐；上月无数据时返回 NULL，不要当 0 处理。
+      用窗口函数 LAG 计算，按月份排序。
+    meta:
+      unit: 百分比
+      formula: (cur - prev) / prev
+
+  - id: metric.yoy
+    kind: metric
+    title: 同比
+    tags: [同比, 年度增长, YoY]
+    text: |
+      同比 = 本月 / 去年同月 - 1。需要至少 13 个月数据；数据从 2024-01 开始，
+      因此 2025-01 之前没有完整同比。
+    meta:
+      unit: 百分比
+      formula: (cur - prev_year_same_month) / prev_year_same_month
+
+  - id: metric.share
+    kind: metric
+    title: 占比
+    tags: [占比, 结构, 份额, 分布]
+    text: |
+      占比 = 分项 / 合计。分母必须是同一时间、同一过滤条件下的合计；
+      建议用窗口函数 SUM(...) OVER () 计算，避免手工写死分母。
+    meta:
+      unit: 百分比
+      formula: part / total

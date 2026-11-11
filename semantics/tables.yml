@@ -1,0 +1,226 @@
+version: 1
+# 第一层：元数据（表 / 字段 / 类型 / 注释 / 粒度 / 已知坑）
+# 说明：text 会进入检索索引；meta 供生成与校验使用。
+cards:
+  - id: table.dwd_policy
+    kind: table
+    title: dwd_policy 保单明细表
+    tags: [保单, 明细, 事实表, 件数, 保费, 退保]
+    text: |
+      保单粒度明细表，一行一张保单。核心事实表，用于统计保单件数、签单保费、
+      有效保单、退保、件均保费。通过 product_code / channel_code / org_code /
+      customer_id 关联维度表。sign_date 是签单日，effective_date 是生效日，
+      end_date 是满期日；统计"保费"时要注意用哪个日期。
+    meta:
+      grain: 一行一张保单
+      primary_key: policy_id
+      partition: 无（按 sign_date 过滤）
+      columns:
+        - {name: policy_id, type: varchar, desc: 保单唯一编号}
+        - {name: policy_no, type: varchar, desc: 保单业务号，对外展示用}
+        - {name: product_code, type: varchar, desc: 险种编码，关联 dim_product}
+        - {name: channel_code, type: varchar, desc: 渠道编码，关联 dim_channel；存在少量 C99 孤儿码}
+        - {name: org_code, type: varchar, desc: 机构编码，关联 dim_org}
+        - {name: customer_id, type: varchar, desc: 客户编号，关联 dim_customer}
+        - {name: sign_date, type: date, desc: 签单日期（承保录入日）}
+        - {name: effective_date, type: date, desc: 生效日期，通常晚于签单日 0-10 天}
+        - {name: end_date, type: date, desc: 满期日期 = 生效日 + 保险期间 - 1 天}
+        - {name: term_months, type: int, desc: 保险期间（月），取值 12/24/36/60}
+        - {name: policy_status, type: varchar, desc: 保单状态：有效 / 退保 / 满期}
+        - {name: annual_premium, type: decimal, desc: 年化保费（签单口径），非当年实收}
+        - {name: coverage_amount, type: decimal, desc: 保额}
+        - {name: agent_id, type: varchar, desc: 业务员编号}
+      caveats:
+        - channel_code 有约 0.1% 为 C99，维表无对应记录；做渠道分析时必须剔除或单独归为"未知渠道"。
+        - annual_premium 是年化保费，直接 SUM 会高估当年保费收入；年度/月度保费必须用 dwd_premium_month。
+
+  - id: table.dwd_premium_month
+    kind: table
+    title: dwd_premium_month 保费按月确认表
+    tags: [保费, 月度, 收入, 确认, 明细, 环比, 同比]
+    text: |
+      保费收入的事实表：每张保单每月一行，premium 为当月确认的保费。
+      统计"保费收入""月度保费""环比""同比"时应使用本表，而不是 dwd_policy.annual_premium。
+      本表已按 effective_date 起按月确认，退保当月停止确认。
+    meta:
+      grain: 一行 = 一张保单 × 一个自然月
+      primary_key: [policy_id, stat_month]
+      partition: stat_month（月初日期）
+      columns:
+        - {name: policy_id, type: varchar, desc: 保单编号}
+        - {name: stat_month, type: date, desc: 保费归属月份，取月初日期}
+        - {name: premium, type: decimal, desc: 当月确认保费；约 0.4% 为空值}
+        - {name: channel_code, type: varchar, desc: 冗余渠道编码，与保单一致}
+        - {name: product_code, type: varchar, desc: 冗余险种编码，与保单一致}
+        - {name: org_code, type: varchar, desc: 冗余机构编码，与保单一致}
+      caveats:
+        - premium 存在空值，SUM 前需 COALESCE(premium, 0)；COUNT(premium) 与 COUNT(*) 结果不同。
+        - 本表包含退保/满期保单在有效期内的历史月份；要只看"当前有效保单"必须 JOIN dwd_policy 并过滤 policy_status='有效'。
+        - stat_month 是月初日期，不要用 DATE_TRUNC('month', stat_month) 再截一次（虽然等价，但会阻止分区裁剪）。
+
+  - id: table.dwd_surrender
+    kind: table
+    title: dwd_surrender 退保记录表
+    tags: [退保, 退保率, 退保金额, 退保原因]
+    text: |
+      退保事件表，一行一次退保。用于退保件数、退保金额、退保率和退保原因分析。
+      存在少量重复推送记录（同一 policy_id + surrender_date 出现多行），统计件数必须去重。
+    meta:
+      grain: 一行一次退保事件（理论上）
+      primary_key: surrender_id
+      columns:
+        - {name: surrender_id, type: varchar, desc: 退保记录编号}
+        - {name: policy_id, type: varchar, desc: 保单编号}
+        - {name: surrender_date, type: date, desc: 退保日期}
+        - {name: surrender_amount, type: decimal, desc: 退保金额（现金价值）}
+        - {name: surrender_reason, type: varchar, desc: 退保原因}
+        - {name: channel_code, type: varchar, desc: 渠道编码}
+      caveats:
+        - 存在重复推送：同一 policy_id + surrender_date 可能有多行，件数统计用 COUNT(DISTINCT policy_id)。
+        - 退保率的分母有歧义（有效件数 / 期初件数 / 保费），见 metrics.surrender_rate。
+
+  - id: table.dwd_claim
+    kind: table
+    title: dwd_claim 理赔记录表
+    tags: [理赔, 赔付, 赔付率, 赔案]
+    text: |
+      理赔事件表，一行一次赔案。用于赔付金额、赔付率、案均赔付分析。
+    meta:
+      grain: 一行一次赔案
+      primary_key: claim_id
+      columns:
+        - {name: claim_id, type: varchar, desc: 赔案编号}
+        - {name: policy_id, type: varchar, desc: 保单编号}
+        - {name: claim_date, type: date, desc: 理赔日期}
+        - {name: claim_amount, type: decimal, desc: 赔付金额}
+        - {name: claim_type, type: varchar, desc: 理赔类型：医疗/重疾/身故/伤残/津贴}
+        - {name: channel_code, type: varchar, desc: 渠道编码}
+
+  - id: table.dws_channel_premium_month
+    kind: table
+    title: dws_channel_premium_month 渠道月度保费宽表
+    tags: [渠道, 月度, 宽表, 保费, 预聚合]
+    text: |
+      按渠道 × 月份预聚合的保费宽表，含 channel_name。查询快，适合渠道月度趋势和占比。
+      注意：本表聚合时**未剔除退保/满期保单**，且 premium 已 COALESCE 为 0，
+      与"有效保单保费收入"口径存在约 2-3% 差异；对口径敏感的问题应回到 dwd_premium_month 明细。
+    meta:
+      grain: 一行 = 一个渠道 × 一个自然月
+      primary_key: [stat_month, channel_code]
+      columns:
+        - {name: stat_month, type: date, desc: 月份（月初）}
+        - {name: channel_code, type: varchar, desc: 渠道编码}
+        - {name: channel_name, type: varchar, desc: 渠道名称（已关联）}
+        - {name: premium, type: decimal, desc: 当月保费合计（全口径，含退保/满期历史月）}
+        - {name: policy_cnt, type: int, desc: 当月有保费确认的保单数}
+        - {name: avg_premium, type: decimal, desc: 件均保费 = premium / policy_cnt}
+      caveats:
+        - 全口径，未按 policy_status 过滤；与 detail 口径不一致，不能混用。
+        - 适合"渠道趋势/占比"，不适合"有效保单件均"这类需要状态过滤的问题。
+
+  - id: table.dws_product_premium_month
+    kind: table
+    title: dws_product_premium_month 险种月度保费宽表
+    tags: [险种, 产品, 月度, 保费, 占比]
+    text: |
+      按险种 × 月份预聚合的保费宽表，含 product_name。适合险种保费占比与趋势。
+      与渠道宽表一样，未剔除退保/满期保单。
+    meta:
+      grain: 一行 = 一个险种 × 一个自然月
+      primary_key: [stat_month, product_code]
+      columns:
+        - {name: stat_month, type: date, desc: 月份}
+        - {name: product_code, type: varchar, desc: 险种编码}
+        - {name: product_name, type: varchar, desc: 险种名称}
+        - {name: premium, type: decimal, desc: 当月保费合计（全口径）}
+      caveats:
+        - 全口径，与明细口径存在差异。
+
+  - id: table.dim_channel
+    kind: table
+    title: dim_channel 渠道维表
+    tags: [渠道, 维度, 个险, 银保, 互联网, 经纪]
+    text: |
+      渠道维度表，4 个渠道：个险代理人(C01)、银保渠道(C02)、互联网(C03)、经纪代理(C04)。
+      channel_type 为渠道大类。做渠道分析时以本表为准，避免按编码硬编码名称。
+    meta:
+      grain: 一行一个渠道
+      primary_key: channel_code
+      columns:
+        - {name: channel_code, type: varchar, desc: 渠道编码}
+        - {name: channel_name, type: varchar, desc: 渠道名称}
+        - {name: channel_type, type: varchar, desc: 渠道大类}
+
+  - id: table.dim_product
+    kind: table
+    title: dim_product 险种维表
+    tags: [险种, 产品, 重疾, 医疗, 年金, 寿险, 意外]
+    text: |
+      险种维度表：重疾险(P01)、医疗险(P02)、年金险(P03)、定期寿险(P04)、意外险(P05)。
+      product_type 为险种大类（健康险/年金险/寿险/意外险），risk_level 为风险等级。
+      product_name 存在少量尾随空格，比较时建议 TRIM。
+    meta:
+      grain: 一行一个险种
+      primary_key: product_code
+      columns:
+        - {name: product_code, type: varchar, desc: 险种编码}
+        - {name: product_name, type: varchar, desc: 险种名称，存在尾随空格}
+        - {name: product_type, type: varchar, desc: 险种大类}
+        - {name: risk_level, type: varchar, desc: 风险等级}
+        - {name: term_options, type: varchar, desc: 可选保险期间}
+      caveats:
+        - product_name 有尾随空格，JOIN/比较前建议 TRIM。
+
+  - id: table.dim_org
+    kind: table
+    title: dim_org 机构维表
+    tags: [机构, 区域, 分公司, 维度]
+    text: |
+      机构维度表，含 region（大区）与 province。用于按机构/大区拆分业绩。
+    meta:
+      grain: 一行一个机构
+      primary_key: org_code
+      columns:
+        - {name: org_code, type: varchar, desc: 机构编码}
+        - {name: org_name, type: varchar, desc: 机构名称}
+        - {name: region, type: varchar, desc: 大区：华东/华南/华北/西南}
+        - {name: province, type: varchar, desc: 省份}
+
+  - id: table.dim_customer
+    kind: table
+    title: dim_customer 客户维表
+    tags: [客户, 性别, 年龄, 城市, 个人信息]
+    text: |
+      客户维度表，含性别、出生年份、城市。phone_masked / id_no_masked 为脱敏后的
+      手机号与证件号，属于敏感字段：任何查询都不得输出明文，只允许做聚合或打码展示。
+    meta:
+      grain: 一行一个客户
+      primary_key: customer_id
+      columns:
+        - {name: customer_id, type: varchar, desc: 客户编号}
+        - {name: gender, type: varchar, desc: 性别}
+        - {name: birth_year, type: int, desc: 出生年份，约 1% 为空}
+        - {name: city, type: varchar, desc: 所在城市}
+        - {name: phone_masked, type: varchar, desc: 手机号（已脱敏），敏感字段}
+        - {name: id_no_masked, type: varchar, desc: 证件号（已脱敏），敏感字段}
+      caveats:
+        - 敏感字段禁止在结果集中返回明文；聚合统计（如客户数）不受限。
+
+  - id: table.dim_date
+    kind: table
+    title: dim_date 日期维表
+    tags: [日期, 时间, 月, 季度, 年, 维度]
+    text: |
+      日期维度表，覆盖 2024-01-01 到 2026-06-30，含年/季度/月/月初标记。
+      做同比、环比、月份补齐时使用。
+    meta:
+      grain: 一行一天
+      primary_key: date_key
+      columns:
+        - {name: date_key, type: int, desc: 日期键 yyyymmdd}
+        - {name: date, type: date, desc: 日期}
+        - {name: year, type: int, desc: 年}
+        - {name: quarter, type: int, desc: 季度}
+        - {name: month, type: int, desc: 月}
+        - {name: month_start, type: date, desc: 所在月月初}
+        - {name: is_month_start, type: int, desc: 是否月初}

@@ -1,0 +1,72 @@
+version: 1
+# 第三层：表关系与 JOIN 路径（含粒度警告）
+cards:
+  - id: join.policy_dims
+    kind: join
+    title: 保单 → 渠道 / 险种 / 机构 / 客户
+    tags: [JOIN, 关联, 维度, 渠道, 险种, 机构, 客户]
+    text: |
+      dwd_policy.channel_code = dim_channel.channel_code
+      dwd_policy.product_code = dim_product.product_code
+      dwd_policy.org_code     = dim_org.org_code
+      dwd_policy.customer_id  = dim_customer.customer_id
+      均为多对一，不会放大行数。渠道维表缺少 C99，用 LEFT JOIN 会得到 NULL 名称。
+    meta:
+      left: dwd_policy
+      right: dim_channel / dim_product / dim_org / dim_customer
+      cardinality: n:1
+      risk: low
+
+  - id: join.premium_policy
+    kind: join
+    title: 月度保费 → 保单
+    tags: [JOIN, 保费, 保单, 状态, 粒度]
+    text: |
+      dwd_premium_month.policy_id = dwd_policy.policy_id，多对一。
+      需要按 policy_status 过滤时使用；JOIN 后行数不变（每张保单一个月一行）。
+    meta:
+      left: dwd_premium_month
+      right: dwd_policy
+      cardinality: n:1
+      risk: low
+
+  - id: join.event_tables
+    kind: join
+    title: 退保 / 理赔 与保单关联
+    tags: [JOIN, 退保, 理赔, 事件表, 放大]
+    text: |
+      dwd_surrender.policy_id / dwd_claim.policy_id = dwd_policy.policy_id，多对一。
+      但退保与理赔是事件表：直接与月度保费表 JOIN 会按事件数放大保费（重复计数）。
+      正确做法：先在事件表内按保单/月聚合，再与保费表 JOIN。
+    meta:
+      left: dwd_surrender / dwd_claim
+      right: dwd_policy
+      cardinality: n:1
+      risk: high
+      note: 与事实表直接 JOIN 会产生 fan-out，必须先聚合。
+
+  - id: join.date_dim
+    kind: join
+    title: 日期维表关联
+    tags: [JOIN, 日期, 时间, 月份补齐]
+    text: |
+      dim_date.date 可与 sign_date / effective_date / surrender_date / claim_date 关联；
+      stat_month 本身是月初日期，可直接与 dim_date.date 关联（需 is_month_start=1）。
+      用于补齐没有业务的月份，避免折线图断点。
+    meta:
+      left: dim_date
+      right: 事实表日期列
+      cardinality: 1:n
+      risk: low
+
+  - id: join.grain_warning
+    kind: join
+    title: 粒度不一致的常见错误
+    tags: [粒度, 重复计数, 扇出, 口径]
+    text: |
+      1) 保单表（一行一单）与月度保费表（一行一单一月）直接 JOIN 再 SUM(annual_premium) 会按月份数放大。
+      2) 退保表与理赔表同时 JOIN 会产生笛卡尔放大。
+      3) 宽表 dws_* 已经是聚合粒度，不能再与明细表 JOIN 后 SUM。
+      判断方法：JOIN 前后各算一次 COUNT(*)，行数变化即存在扇出。
+    meta:
+      risk: high
