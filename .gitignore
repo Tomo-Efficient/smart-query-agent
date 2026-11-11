@@ -15,3 +15,4 @@ eval/results/report-*.md
 !eval/results/report-latest.json
 eval/results/ablation/*/report-*.json
 !eval/results/ablation/*/report-latest.json
+.tmp/

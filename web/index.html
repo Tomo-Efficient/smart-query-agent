@@ -32,6 +32,23 @@
           <div class="suggest" id="suggest">
             <div class="label">试试这些问题</div>
           </div>
+          <div class="howto">
+            <div class="howto-item">
+              <span class="howto-no">01</span>
+              <strong>先找证据</strong>
+              <p>33 张语义卡片（指标 / 表 / 关系 / 术语）先做检索，只把相关的表和口径放进 Prompt。</p>
+            </div>
+            <div class="howto-item">
+              <span class="howto-no">02</span>
+              <strong>再查安全</strong>
+              <p>请求级意图筛查 + SQL 语法树校验：单条只读、表白名单、敏感字段，危险请求不执行。</p>
+            </div>
+            <div class="howto-item">
+              <span class="howto-no">03</span>
+              <strong>最后执行</strong>
+              <p>DuckDB 只读连接、15 秒超时、最多 200 行；数字直接来自结果集，再由结论层复述。</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

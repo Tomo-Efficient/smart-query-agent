@@ -55,6 +55,11 @@
     return String(v);
   }
 
+  function fmtDuration(ms) {
+    const n = Math.max(0, Math.round(ms || 0));
+    return n >= 1000 ? `${(n / 1000).toFixed(1)} s` : `${n} ms`;
+  }
+
   function toast(msg) {
     const el = $('#toast');
     el.textContent = msg;
@@ -95,6 +100,10 @@
         box.appendChild(btn);
       });
     } catch { /* ignore */ }
+
+    // 支持 ?q= 预填问题（演示深链、截图与分享用）
+    const preset = new URLSearchParams(location.search).get('q');
+    if (preset) setTimeout(() => submit(preset), 80);
   }
 
   // ------------------------------------------------------------------ stream
@@ -156,8 +165,7 @@
       busy = false;
       sendBtn.disabled = false;
       view.live?.remove();
-      const ms = Math.round(performance.now() - t0);
-      totalTimeEl.textContent = `${(ms / 1000).toFixed(1)} s`;
+      totalTimeEl.textContent = fmtDuration(performance.now() - t0);
       scrollBottom();
     }
   }
@@ -238,6 +246,7 @@
   // ------------------------------------------------------------------ final
   function renderFinal(view, data) {
     const [cls, label] = STATUS[data.status] || ['ok', data.status];
+    stepsEl.querySelector('.step.running')?.remove();
     view.bubble.querySelector('.status')?.remove();
     view.bubble.querySelector('.answer')?.remove();
 
@@ -264,7 +273,7 @@
     const bits = [
       `路由 <b>${esc(data.route?.label || '—')}</b>`,
       `模型 <b>${esc(data.mode === 'live' ? data.model : '离线模板')}</b>`,
-      `耗时 <b>${data.timings?.total_ms ?? 0} ms</b>`,
+      `耗时 <b>${data.timings?.total_ms ? data.timings.total_ms + ' ms' : '<1 ms'}</b>`,
       `SQL <b>${data.timings?.sql_ms ?? 0} ms</b>`,
       `Token <b>${(data.usage?.input_tokens || 0)} / ${(data.usage?.output_tokens || 0)}</b>`,
     ];
@@ -286,7 +295,7 @@
       </span>`).join('') || '<span class="ev">无命中</span>';
     sqlEl.textContent = data.sql || '-- 本次未生成 SQL';
     if (Array.isArray(data.checks) && data.checks.length) renderChecks(data.checks);
-    totalTimeEl.textContent = `${((data.timings?.total_ms || 0) / 1000).toFixed(1)} s`;
+    totalTimeEl.textContent = fmtDuration(data.timings?.total_ms || 0);
     scrollBottom();
   }
 

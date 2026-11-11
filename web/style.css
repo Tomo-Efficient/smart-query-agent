@@ -131,6 +131,15 @@ button, textarea { font-family: inherit; font-size: inherit; color: inherit; }
 }
 .intro p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 560px; }
 
+.howto {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  margin-top: 26px; padding-top: 20px; border-top: 1px dashed var(--line);
+}
+.howto-item { display: flex; flex-direction: column; gap: 6px; }
+.howto-no { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; color: var(--accent); letter-spacing: .08em; }
+.howto-item strong { font-size: 13px; font-weight: 600; }
+.howto-item p { margin: 0; font-size: 12px; line-height: 1.75; color: var(--muted); max-width: none; }
+
 .suggest { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px; }
 .suggest .label { grid-column: 1 / -1; font-size: 11px; letter-spacing: .12em; color: var(--faint); text-transform: uppercase; margin-bottom: 2px; }
 .chip {
@@ -381,4 +390,5 @@ kbd {
   .thread { max-height: none; }
   .inspector { border-top: 1px solid var(--line); padding-bottom: 28px; }
   .suggest { grid-template-columns: 1fr; }
+  .howto { grid-template-columns: 1fr; }
 }
