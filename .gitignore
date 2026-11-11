@@ -7,6 +7,7 @@ __pycache__/
 
 # 生成物：CSV 原始分片可随时重建（warehouse.duckdb 已入库，便于 clone 即跑）
 data/raw/
+data/app.db
 
 # 评测历史只保留 latest 一份
 eval/results/report-*.json

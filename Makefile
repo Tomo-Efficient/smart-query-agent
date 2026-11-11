@@ -1,7 +1,7 @@
 PY ?= .venv/bin/python
 PORT ?= 8000
 
-.PHONY: help setup data serve eval eval-quick ablate test clean docker
+.PHONY: help setup data serve eval eval-quick ablate test users clean docker
 
 help:
 	@echo "make setup      创建虚拟环境并安装依赖"
@@ -10,6 +10,7 @@ help:
 	@echo "make eval       全量评测（164 题）"
 	@echo "make eval-quick 冒烟评测（20 题）"
 	@echo "make ablate     消融实验（4 组配置）"
+	@echo "make users      账号管理（list/add/scope/passwd）"
 	@echo "make test       运行测试"
 
 setup:
@@ -32,6 +33,9 @@ eval-quick:
 
 ablate:
 	$(PY) eval/ablate.py
+
+users:
+	$(PY) -m scripts.users list
 
 test:
 	$(PY) -m pytest tests -q

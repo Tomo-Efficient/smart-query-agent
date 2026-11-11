@@ -40,7 +40,8 @@ SYSTEM = """你是企业数据平台的问数 Agent，把业务问题翻译成 D
 {{"sql": "...", "plan": "一句话思路", "assumptions": ["..."], "needs_clarification": false, "clarification": ""}}"""
 
 
-def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer) -> str:
+def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer,
+            history: list[dict] | None = None) -> str:
     as_of = config.AS_OF
     last_month = f"{as_of.year}-{as_of.month - 1:02d}" if as_of.month > 1 else f"{as_of.year - 1}-12"
     this_month = f"{as_of.year}-{as_of.month:02d}"
@@ -50,6 +51,16 @@ def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer) 
     evidence = "\n\n".join(
         f"[{h.card.id}] {h.card.title}\n{h.card.text.strip()}" for h in metric_hits + other_hits
     )
+
+    history_block = ""
+    if history:
+        lines = []
+        for item in history[-3:]:
+            lines.append(f"- 问：{item.get('question', '')}")
+            sql = (item.get("sql") or "").strip()
+            if sql:
+                lines.append(f"  上一条 SQL：{' '.join(sql.split())[:300]}")
+        history_block = "\n## 对话历史（用于理解指代，必要时沿用条件）\n" + "\n".join(lines) + "\n"
 
     return f"""## 数据截止
 {as_of.isoformat()}（上月={last_month}，本月={this_month}，本月不完整）
@@ -68,14 +79,20 @@ def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer) 
 
 ## 路由
 复杂度：{route.label}（{', '.join(route.reasons)}）
-
+{history_block}
 ## 问题
 {question}"""
 
 
-def generate(question: str, hits: list[Hit], route: Route, layer: SemanticLayer, llm: LLM) -> GenResult:
+def generate(question: str, hits: list[Hit], route: Route, layer: SemanticLayer, llm: LLM,
+             history: list[dict] | None = None) -> GenResult:
     if not llm.available:
-        return mock_generate(question, route)
+        rewritten = rewrite_followup(question, history)
+        result = mock_generate(rewritten or question, route)
+        if rewritten:
+            result.plan = f"追问改写：{rewritten}"
+            result.assumptions.append(f"按上一轮条件理解为：{rewritten}")
+        return result
 
     try:
         data, usage = llm.chat_json(
@@ -84,10 +101,12 @@ def generate(question: str, hits: list[Hit], route: Route, layer: SemanticLayer,
                 last_month=_month_shift(config.AS_OF, -1),
                 this_month=_month_shift(config.AS_OF, 0),
             ),
-            _prompt(question, hits, route, layer),
+            _prompt(question, hits, route, layer, history),
         )
     except LLMError as exc:
-        return GenResult(mode="mock", error=str(exc), **mock_generate(question, route).__dict__)
+        fallback = mock_generate(question, route)
+        fallback.error = str(exc)
+        return fallback
 
     sql = (data.get("sql") or "").strip()
     return GenResult(
@@ -133,6 +152,60 @@ CHANNEL_CODE = {"互联网": "C03", "银保": "C02", "个险": "C01", "代理人
 TWELVE_PAT = r"近\s*(12|十二)\s*个?月|过去\s*(一|12|十二)\s*年|近\s*一年|最近\s*(一|12|十二)\s*年|过去\s*12\s*个?月|最近\s*12\s*个?月"
 TREND_WORDS = r"趋势|走势|按月|每月"
 NEAR3_PAT = r"近\s*(3|三)\s*个?月|最近\s*(3|三)\s*个?月|三个月|3\s*个月"
+
+
+TIME_PHRASES = ("今年", "上季度", "近12个月", "过去一年", "最近一年", "去年", "上个月", "上月", "这个月", "本月", "近三个月")
+FOLLOWUP_START = re.compile(r"^\s*(那|那么|呢|要是|如果|改成|换成|再看|看下|看看|再|换)")
+
+
+def rewrite_followup(question: str, history: list[dict] | None) -> str | None:
+    """离线模板没有上下文，所以把"那今年呢"这类追问还原成一句完整的问题。
+
+    只处理两种最常见的追问：换时间窗、换拆解维度。其余情况原样返回 None，
+    交给澄清分支——不猜比猜错好。
+    """
+    if not history:
+        return None
+    last = (history[-1].get("question") or "").strip()
+    if not last:
+        return None
+    q = (question or "").strip()
+    if not q or len(q) > 24:
+        return None
+
+    metric_words = ("保费", "件数", "退保", "赔付", "占比", "趋势", "保单", "收入", "件均")
+    has_metric = any(w in q for w in metric_words)
+    is_followup = bool(FOLLOWUP_START.match(q)) or q.endswith("呢") or any(p in q for p in TIME_PHRASES)
+    if not is_followup:
+        return None
+    # 自带指标的完整问句不是追问（"上月各渠道退保率"不能拼到上一问上）
+    if has_metric and not FOLLOWUP_START.match(q):
+        return None
+
+    # 1) 换时间窗
+    for phrase in TIME_PHRASES:
+        if phrase in q:
+            base = last
+            for old in TIME_PHRASES:
+                base = base.replace(old, "")
+            base = base.strip()
+            if not base:
+                return None
+            return f"{phrase}{base}"
+
+    # 2) 换维度
+    wants_product = bool(re.search(r"险种|产品", q))
+    wants_channel = "渠道" in q
+    if wants_product and "险种" not in last:
+        base = re.sub(r"各?渠道", "各险种", last).replace("渠道的", "险种的")
+        if base != last:
+            return base
+    if wants_channel and "渠道" not in last:
+        base = re.sub(r"各?险种", "各渠道", last)
+        if base != last:
+            return base
+
+    return None
 
 
 def _add_months(d: date, n: int) -> date:

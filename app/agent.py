@@ -19,8 +19,10 @@ class Agent:
         self._emit = None  # 可选：每步回调，用于 SSE 流式输出
 
     # ------------------------------------------------------------------ 主入口
-    def ask(self, question: str) -> dict[str, Any]:
+    def ask(self, question: str, scope=None, history=None) -> dict[str, Any]:
+        """scope: guard.DataScope（数据域）；history: [{'question','sql','status'}] 最近若干轮。"""
         question = (question or "").strip()
+        self._scope = scope
         if not question:
             return self._empty("请输入一个业务问题。")
 
@@ -62,7 +64,7 @@ class Agent:
 
         # 4. 生成
         t0 = time.perf_counter()
-        gen = generator.generate(question, hits, route, self.layer, self.llm)
+        gen = generator.generate(question, hits, route, self.layer, self.llm, history=history)
         usage.add(gen.usage)
         trace.append(self._step("generate", "生成 SQL", "done" if gen.sql else "warn",
                                 gen.plan or ("离线模板未覆盖该问法" if gen.mode == "mock" else "未生成 SQL"),
@@ -82,10 +84,15 @@ class Agent:
         for attempt in range(config.MAX_REPAIR + 1):
             tool_calls += 1
             t0 = time.perf_counter()
-            g = guard.check_sql(sql, self.layer)
+            g = guard.check_sql(sql, self.layer, scope)
             checks = [asdict(c) for c in g.checks]
             if g.ok:
-                trace.append(self._step("guard", "SQL 校验", "done", "通过：只读、单语句、表白名单、无敏感字段", t0, {"checks": checks}))
+                # 护栏会改写 SQL（补 LIMIT、注入数据域），必须用改写后的版本执行
+                sql = g.sql
+                detail = "通过：只读、单语句、表白名单、无敏感字段"
+                if any(c["name"] == "数据域" for c in checks):
+                    detail += "、已注入数据域"
+                trace.append(self._step("guard", "SQL 校验", "done", detail, t0, {"checks": checks}))
                 break
             trace.append(self._step("guard", "SQL 校验", "fail", g.error or "校验失败", t0, {"checks": checks}))
             if attempt >= config.MAX_REPAIR or not self.llm.available or tool_calls >= config.MAX_TOOL_CALLS:
@@ -116,10 +123,10 @@ class Agent:
                 fixed, rep_usage = generator.repair(question, sql, result.error, self.layer, self.llm)
                 usage.add(rep_usage)
                 if fixed:
-                    g2 = guard.check_sql(fixed, self.layer)
+                    g2 = guard.check_sql(fixed, self.layer, scope)
                     checks = [asdict(c) for c in g2.checks]
                     if g2.ok:
-                        sql = fixed
+                        sql = g2.sql
                         t0 = time.perf_counter()
                         result = executor.run_sql(sql)
                         trace.append(self._step("execute", "重试执行", "done" if result.ok else "fail",
@@ -174,6 +181,9 @@ class Agent:
             "as_of": config.AS_OF.isoformat(),
             "model": config.LLM_MODEL if self.llm.available else "offline-template",
         }
+        current = getattr(self, "_scope", None)
+        if current is not None:
+            payload["scope"] = current.label()
         return payload
 
     def _empty(self, message: str) -> dict[str, Any]:

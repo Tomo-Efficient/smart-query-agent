@@ -17,11 +17,18 @@
   <div class="topbar-right">
     <span class="pill" id="as-of"><span class="dot"></span>数据截止 <b>—</b></span>
     <span class="pill" id="mode"><span class="dot"></span><b>连接中</b></span>
+    <button class="ghost-btn" id="new-chat" hidden>新对话</button>
+    <button class="ghost-btn" id="open-audit" hidden>审计</button>
     <button class="ghost-btn" id="open-drawer">语义资产 · <span id="card-count">—</span></button>
+    <div class="user-chip" id="user-chip" hidden>
+      <span class="user-name" id="user-name">—</span>
+      <span class="user-scope" id="user-scope">—</span>
+      <button class="link-btn" id="logout">退出</button>
+    </div>
   </div>
 </header>
 
-<main class="layout">
+<main class="layout" id="app" hidden>
   <section class="chat">
     <div class="thread" id="thread">
       <div class="thread-inner">
@@ -85,6 +92,33 @@
   </aside>
 </main>
 
+<!-- 登录：试点模式下所有查询都需要身份与数据域 -->
+<div class="login-layer" id="login" hidden>
+  <div class="login-card">
+    <div class="login-brand"><span class="brand-mark">问</span></div>
+    <h1>登录问数工作台</h1>
+    <p class="login-sub">用公司工号登录。你看到的数据范围由账号的数据域决定，所有查询都会留痕。</p>
+    <form id="login-form" autocomplete="on">
+      <label>工号<input id="login-user" name="username" autocomplete="username" required></label>
+      <label>密码<input id="login-pass" name="password" type="password" autocomplete="current-password" required></label>
+      <div class="login-error" id="login-error" hidden></div>
+      <button class="send" type="submit" id="login-btn">登录</button>
+    </form>
+    <div class="login-demo">
+      <div class="label">试点演示账号</div>
+      <button type="button" class="demo-row" data-user="admin" data-pass="admin123">
+        <b>admin</b><span>管理员 · 全量数据</span>
+      </button>
+      <button type="button" class="demo-row" data-user="zhang" data-pass="demo123">
+        <b>zhang</b><span>个险渠道 · 仅 C01</span>
+      </button>
+      <button type="button" class="demo-row" data-user="li" data-pass="demo123">
+        <b>li</b><span>银保渠道 · 仅 C02</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="drawer-backdrop" id="backdrop"></div>
 <aside class="drawer" id="drawer" aria-label="语义资产">
   <div class="drawer-head">
@@ -92,6 +126,14 @@
     <button class="ghost-btn" id="close-drawer">关闭</button>
   </div>
   <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<aside class="drawer" id="audit-drawer" aria-label="审计日志">
+  <div class="drawer-head">
+    <h2>审计日志</h2>
+    <button class="ghost-btn" id="close-audit">关闭</button>
+  </div>
+  <div class="drawer-body" id="audit-body"></div>
 </aside>
 
 <div class="toast" id="toast"></div>

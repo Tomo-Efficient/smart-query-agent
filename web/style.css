@@ -48,7 +48,6 @@ button, textarea { font-family: inherit; font-size: inherit; color: inherit; }
   padding: 0 22px;
   border-bottom: 1px solid var(--line);
   background: rgba(246, 244, 239, .86);
-  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -392,3 +391,86 @@ kbd {
   .suggest { grid-template-columns: 1fr; }
   .howto { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- 登录与身份 */
+.user-chip {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--line); background: var(--panel);
+  border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 12px;
+}
+.user-name { font-weight: 600; }
+.user-scope { color: var(--muted); font-size: 11.5px; padding-left: 8px; border-left: 1px solid var(--line-soft); }
+.link-btn {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font-size: 11.5px; padding: 3px 8px; border-radius: 999px;
+}
+.link-btn:hover { background: var(--line-soft); color: var(--ink); }
+
+.login-layer {
+  position: fixed; inset: 0; z-index: 80;
+  background: radial-gradient(circle at 50% 0%, #fbf9f4 0%, var(--paper) 60%);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.login-card {
+  width: 100%; max-width: 372px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 18px; padding: 28px 26px 22px;
+  box-shadow: var(--shadow);
+}
+.login-brand { margin-bottom: 12px; }
+.login-card h1 { font-family: var(--serif); font-size: 21px; margin: 0 0 6px; font-weight: 600; }
+.login-sub { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; line-height: 1.65; }
+.login-card form { display: grid; gap: 12px; }
+.login-card label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+.login-card input {
+  border: 1px solid var(--line); background: #fff; border-radius: 9px;
+  padding: 9px 11px; font-size: 13.5px; color: var(--ink); outline: none;
+}
+.login-card input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+.login-card .send { width: 100%; justify-content: center; margin-top: 2px; }
+.login-error {
+  background: var(--red-soft); color: var(--red); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px;
+}
+.login-demo { margin-top: 20px; border-top: 1px solid var(--line-soft); padding-top: 14px; display: grid; gap: 6px; }
+.login-demo .label { font-size: 10px; letter-spacing: .12em; color: var(--faint); text-transform: uppercase; margin-bottom: 2px; }
+.demo-row {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  border: 1px solid var(--line-soft); background: #fff; border-radius: 9px;
+  padding: 7px 10px; cursor: pointer; font-size: 12px;
+}
+.demo-row:hover { border-color: var(--teal); background: var(--teal-soft); }
+.demo-row b { font-family: var(--mono); font-size: 11.5px; }
+.demo-row span { color: var(--muted); }
+
+/* ---------------------------------------------------------------- 审计 */
+.audit-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.audit-stat {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 9px;
+  padding: 7px 11px; font-size: 11.5px; color: var(--muted);
+}
+.audit-stat b { color: var(--ink); font-size: 14px; margin-right: 4px; }
+.audit-row {
+  border-bottom: 1px solid var(--line-soft); padding: 9px 0; font-size: 12px;
+}
+.audit-row:last-child { border-bottom: 0; }
+.audit-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.audit-user { font-weight: 600; }
+.audit-time { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.audit-q { margin: 3px 0 0; color: var(--ink); }
+.audit-sql {
+  margin: 4px 0 0; font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  background: #faf8f3; border: 1px solid var(--line-soft); border-radius: 6px;
+  padding: 6px 8px; white-space: pre-wrap; word-break: break-all; max-height: 92px; overflow: hidden;
+}
+.badge {
+  font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); background: #fff;
+}
+.badge.ok { color: var(--teal-deep); border-color: #cfe6e2; background: var(--teal-soft); }
+.badge.blocked { color: var(--red); border-color: #f3d3d0; background: var(--red-soft); }
+.badge.clarification { color: var(--amber); border-color: #f0dcbd; background: var(--amber-soft); }
+
+.drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+
+/* hidden 属性必须胜过组件的 display 规则 */
+[hidden] { display: none !important; }

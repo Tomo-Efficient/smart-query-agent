@@ -13,6 +13,7 @@
 
   let busy = false;
   let semanticsLoaded = false;
+  const session = { user: null, conversationId: null };
 
   const STATUS = {
     ok: ['ok', '已完成'],
@@ -68,8 +69,109 @@
     el._t = setTimeout(() => el.classList.remove('show'), 2600);
   }
 
+  // ------------------------------------------------------------------ 会话
+  async function loadSession() {
+    try {
+      const res = await fetch('/api/me');
+      const data = await res.json();
+      if (data.authenticated) {
+        session.user = data.user;
+        return true;
+      }
+      return !data.auth_required;
+    } catch {
+      return false;
+    }
+  }
+
+  function setUserChip(user) {
+    if (!user) return;
+    $('#user-chip').hidden = false;
+    $('#user-name').textContent = user.name || user.username;
+    $('#user-scope').textContent = `${user.scope} · ${user.quota_used}/${user.quota}`;
+    $('#open-audit').hidden = !user.is_admin;
+  }
+
+  function showLogin(message = '') {
+    $('#login').hidden = false;
+    $('#app').hidden = true;
+    document.querySelector('.topbar').style.display = 'none';
+    const err = $('#login-error');
+    if (message) {
+      err.hidden = false;
+      err.textContent = message;
+    }
+    setTimeout(() => $('#login-user')?.focus(), 60);
+  }
+
+  async function doLogin(username, password) {
+    const btn = $('#login-btn');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '登录失败');
+      session.user = data.user;
+      $('#login').hidden = true;
+      $('#app').hidden = false;
+      document.querySelector('.topbar').style.display = '';
+      setUserChip(session.user);
+      await startApp();
+    } catch (err) {
+      showLogin(err.message || String(err));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/';
+  }
+
+  function newChat() {
+    session.conversationId = null;
+    $('#thread').querySelectorAll('.msg').forEach((el) => el.remove());
+    $('#intro')?.remove();
+    $('#new-chat').hidden = true;
+    resetInspector();
+  }
+
+  // ------------------------------------------------------------------ 审计
+  async function openAudit() {
+    $('#audit-body').innerHTML = '<div class="placeholder">加载中…</div>';
+    $('#audit-drawer').classList.add('open');
+    $('#backdrop').classList.add('show');
+    try {
+      const { rows, stats } = await (await fetch('/api/audit?limit=60')).json();
+      const head = stats && stats.users !== undefined ? `<div class="audit-meta">
+        <span class="audit-stat"><b>${stats.users}</b>个账号</span>
+        <span class="audit-stat"><b>${stats.asks}</b>次提问</span>
+        <span class="audit-stat"><b>${stats.blocked}</b>次拦截</span>
+      </div>` : '';
+      const list = rows.map((r) => `
+        <div class="audit-row">
+          <div class="audit-top">
+            <span class="audit-user">${esc(r.username || '—')}</span>
+            <span class="badge ${esc(r.status || '')}">${esc(r.status || '—')}</span>
+            <span class="audit-time">${esc((r.ts || '').replace('T', ' ').slice(0, 19))}</span>
+            <span class="audit-time">${r.rows ?? 0} 行 · ${r.ms ?? 0} ms</span>
+          </div>
+          <div class="audit-q">${esc(r.question || '')}</div>
+          ${r.sql ? `<pre class="audit-sql">${esc(r.sql)}</pre>` : ''}
+        </div>`).join('');
+      $('#audit-body').innerHTML = head + (list || '<div class="placeholder">还没有记录</div>');
+    } catch {
+      $('#audit-body').innerHTML = '<div class="placeholder">审计日志加载失败</div>';
+    }
+  }
+
   // ------------------------------------------------------------------ health
-  async function boot() {
+  async function startApp() {
     try {
       const h = await (await fetch('/api/health')).json();
       $('#as-of').innerHTML = `<span class="dot"></span>数据截止 <b>${esc(h.as_of)}</b>`;
@@ -123,8 +225,12 @@
       const res = await fetch('/api/ask/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, conversation_id: session.conversationId }),
       });
+      if (res.status === 401) {
+        showLogin('登录已过期，请重新登录');
+        return;
+      }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '');
         throw new Error(res.status === 429 ? '提问太频繁，稍等一分钟再试' : (text || `HTTP ${res.status}`));
@@ -150,6 +256,10 @@
           if (evt.type === 'step') {
             pushStep(evt.step);
           } else if (evt.type === 'final') {
+            if (evt.data.conversation_id) {
+              session.conversationId = evt.data.conversation_id;
+              $('#new-chat').hidden = false;
+            }
             renderFinal(view, evt.data);
             finished = true;
           } else if (evt.type === 'error') {
@@ -277,6 +387,7 @@
       `SQL <b>${data.timings?.sql_ms ?? 0} ms</b>`,
       `Token <b>${(data.usage?.input_tokens || 0)} / ${(data.usage?.output_tokens || 0)}</b>`,
     ];
+    if (data.scope) bits.push(`数据域 <b>${esc(data.scope)}</b>`);
     meta.innerHTML = bits.map((b) => `<span>${b}</span>`).join('');
     view.bubble.appendChild(meta);
 
@@ -417,10 +528,46 @@
 
   $('#open-drawer').addEventListener('click', () => toggleDrawer(true));
   $('#close-drawer').addEventListener('click', () => toggleDrawer(false));
-  $('#backdrop').addEventListener('click', () => toggleDrawer(false));
+  $('#close-audit').addEventListener('click', () => {
+    $('#audit-drawer').classList.remove('open');
+    $('#backdrop').classList.remove('show');
+  });
+  $('#backdrop').addEventListener('click', () => {
+    toggleDrawer(false);
+    $('#audit-drawer').classList.remove('open');
+    $('#backdrop').classList.remove('show');
+  });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') toggleDrawer(false);
+    if (e.key === 'Escape') {
+      toggleDrawer(false);
+      $('#audit-drawer').classList.remove('open');
+      $('#backdrop').classList.remove('show');
+    }
   });
 
-  boot();
+  $('#login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    doLogin($('#login-user').value.trim(), $('#login-pass').value);
+  });
+  document.querySelectorAll('.demo-row').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      $('#login-user').value = btn.dataset.user;
+      $('#login-pass').value = btn.dataset.pass;
+      doLogin(btn.dataset.user, btn.dataset.pass);
+    });
+  });
+  $('#logout').addEventListener('click', logout);
+  $('#new-chat').addEventListener('click', newChat);
+  $('#open-audit').addEventListener('click', openAudit);
+
+  (async () => {
+    const ok = await loadSession();
+    if (!ok) {
+      showLogin();
+      return;
+    }
+    $('#app').hidden = false;
+    if (session.user) setUserChip(session.user);
+    await startApp();
+  })();
 })();

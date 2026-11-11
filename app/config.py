@@ -15,6 +15,15 @@ DB_PATH = Path(os.getenv("NL2SQL_DB", ROOT / "data" / "warehouse.duckdb"))
 SEMANTICS_DIR = Path(os.getenv("NL2SQL_SEMANTICS", ROOT / "semantics"))
 WEB_DIR = ROOT / "web"
 
+# 运行时状态（账号 / 会话 / 审计）：与业务数仓分开，业务库始终只读
+APP_DB_PATH = Path(os.getenv("NL2SQL_APP_DB", ROOT / "data" / "app.db"))
+SESSION_COOKIE = "sq_session"
+SESSION_TTL_HOURS = int(os.getenv("NL2SQL_SESSION_TTL", "12"))
+DEFAULT_DAILY_QUOTA = int(os.getenv("NL2SQL_DAILY_QUOTA", "200"))
+# 试点模式：开启后所有 /api/ask 都需要登录；关闭则退化为公开演示
+AUTH_REQUIRED = os.getenv("NL2SQL_AUTH", "on").lower() not in ("off", "0", "false")
+SEED_DEMO_USERS = os.getenv("NL2SQL_SEED_USERS", "on").lower() not in ("off", "0", "false")
+
 # 数据截止日：所有"上月/本月"相对它计算，避免演示时随系统时钟漂移。
 AS_OF = date(2026, 6, 30)
 

@@ -1,7 +1,10 @@
 """SQL 安全护栏：确定性规则，不依赖模型自觉。
 
-顺序：解析 → 单语句 → 只读类型 → 表白名单 → 外部文件 → 敏感字段 → 自动 LIMIT。
+顺序：解析 → 单语句 → 只读类型 → 表白名单 → 外部文件 → 敏感字段 → 数据域注入 → 自动 LIMIT。
 任何一条失败都不执行。
+
+数据域注入：受限账号（只看某渠道/某机构）的 SQL 会被改写成子查询，
+过滤条件加在表这一层，而不是依赖模型自觉写出 WHERE。
 """
 
 from __future__ import annotations
@@ -25,6 +28,37 @@ WRITE_NODES = [
     "Command", "Copy", "Attach", "Detach", "Pragma", "Set", "Use", "Merge",
 ]
 READONLY_ROOTS = (exp.Select, exp.Union)
+
+
+# 每张明细/汇总表支持哪些数据域列；不在表里的列无法过滤，受限账号直接拒绝访问。
+SCOPED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "dwd_policy": ("channel_code", "org_code"),
+    "dwd_premium_month": ("channel_code", "org_code"),
+    "dwd_surrender": ("channel_code",),
+    "dwd_claim": ("channel_code",),
+    "dws_channel_premium_month": ("channel_code",),
+    "dws_product_premium_month": (),
+}
+
+
+@dataclass(frozen=True)
+class DataScope:
+    """空集合 = 不做限制。"""
+
+    channels: frozenset[str] = frozenset()
+    orgs: frozenset[str] = frozenset()
+
+    @property
+    def full(self) -> bool:
+        return not self.channels and not self.orgs
+
+    def label(self) -> str:
+        bits = []
+        if self.channels:
+            bits.append("渠道 " + "、".join(sorted(self.channels)))
+        if self.orgs:
+            bits.append("机构 " + "、".join(sorted(self.orgs)))
+        return " / ".join(bits) or "全量"
 
 
 @dataclass
@@ -69,7 +103,47 @@ def _write_node_types():
 WRITE_TYPES = _write_node_types()
 
 
-def check_sql(sql: str, layer: SemanticLayer) -> GuardResult:
+def _scope_condition(column: str, values: list[str]) -> exp.Expression:
+    return exp.In(this=exp.column(column), expressions=[exp.Literal.string(v) for v in values])
+
+
+def apply_scope(tree: exp.Expression, scope: DataScope) -> tuple[bool, str]:
+    """把数据域改写成 `FROM (SELECT * FROM t WHERE ...) t`；无法过滤的表直接拒绝。"""
+    if scope.full:
+        return True, ""
+
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    injected: list[str] = []
+    for table in list(tree.find_all(exp.Table)):
+        name = (table.name or "").lower()
+        if name in cte_names or name not in SCOPED_COLUMNS:
+            continue
+        columns = SCOPED_COLUMNS[name]
+        conds: list[exp.Expression] = []
+        if scope.channels:
+            if "channel_code" not in columns:
+                return False, f"表 {name} 不支持按渠道过滤，当前账号无权访问"
+            conds.append(_scope_condition("channel_code", sorted(scope.channels)))
+        if scope.orgs:
+            if "org_code" not in columns:
+                return False, f"表 {name} 不支持按机构过滤，当前账号无权访问"
+            conds.append(_scope_condition("org_code", sorted(scope.orgs)))
+        if not conds:
+            continue
+        where = conds[0]
+        for extra in conds[1:]:
+            where = exp.and_(where, extra)
+        inner = exp.select("*").from_(exp.table_(name)).where(where)
+        alias = table.alias_or_name
+        table.replace(exp.Subquery(this=inner, alias=exp.TableAlias(this=exp.to_identifier(alias))))
+        injected.append(name)
+
+    if injected:
+        return True, "、".join(sorted(set(injected)))
+    return True, ""
+
+
+def check_sql(sql: str, layer: SemanticLayer, scope: DataScope | None = None) -> GuardResult:
     checks: list[Check] = []
     allowed = layer.table_names()
 
@@ -143,6 +217,13 @@ def check_sql(sql: str, layer: SemanticLayer) -> GuardResult:
                            "查询客户表时禁止 SELECT *，请显式选择非敏感字段")
 
     checks.append(Check("敏感字段", "pass", "未输出敏感字段"))
+
+    if scope is not None and not scope.full:
+        ok_scope, scope_detail = apply_scope(tree, scope)
+        if not ok_scope:
+            return GuardResult(False, sql, checks + [Check("数据域", "fail", scope_detail)],
+                               f"超出数据域：{scope_detail}")
+        checks.append(Check("数据域", "pass", f"已注入 {scope.label()}（{scope_detail}）"))
 
     limit = tree.args.get("limit")
     if limit is None:
