@@ -152,6 +152,16 @@ tests/          39 个测试：护栏、执行器、检索、路由、端到端�
 index.html      旧版静态演示（GitHub Pages 用，保留）
 ```
 
+## 部署
+
+仓库里有 `Dockerfile` 和 `render.yaml`：Render 上新建 Web Service 指向本仓库即可，
+在环境变量里填 `DEEPSEEK_API_KEY`（不填则跑离线模板）。免费实例会休眠，首访慢几秒。
+
+```bash
+docker build -t smart-query-agent .
+docker run --rm -p 8000:8000 --env-file .env smart-query-agent
+```
+
 ## 已知限制
 
 - 语义层是人工维护的：新增指标要写卡，这是成本，也是可控性的来源

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: smart-query-agent
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false          # 在 Render 面板里填，别写进仓库
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com
+      - key: LLM_MODEL
+        value: deepseek-chat
