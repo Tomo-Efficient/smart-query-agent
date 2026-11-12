@@ -12,6 +12,8 @@
   const totalTimeEl = $('#total-time');
 
   let busy = false;
+  let activeCtrl = null;
+  let lastQuestion = '';
   let semanticsLoaded = false;
   const session = { user: null, conversationId: null };
   let examplesCache = [];
@@ -300,9 +302,15 @@
   // ------------------------------------------------------------------ stream
   async function submit(question) {
     question = (question || '').trim();
-    if (!question || busy) return;
+    if (!question) return;
+    if (busy) {
+      stopRun();
+      return;
+    }
     busy = true;
-    sendBtn.disabled = true;
+    lastQuestion = question;
+    activeCtrl = new AbortController();
+    setRunning(true);
     $('#intro')?.remove();
 
     addUser(question);
@@ -315,6 +323,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question, conversation_id: session.conversationId }),
+        signal: activeCtrl.signal,
       });
       if (res.status === 401) {
         showLogin('登录已过期，请重新登录');
@@ -359,14 +368,42 @@
       }
       if (!finished) renderFailure(view, '连接中断，未收到最终结果');
     } catch (err) {
-      renderFailure(view, err.message || String(err));
+      if (err.name === 'AbortError') renderStopped(view);
+      else renderFailure(view, err.message || String(err));
     } finally {
       busy = false;
-      sendBtn.disabled = false;
+      activeCtrl = null;
+      setRunning(false);
       view.live?.remove();
       totalTimeEl.textContent = fmtDuration(performance.now() - t0);
       scrollBottom();
     }
+  }
+
+  function setRunning(on) {
+    const box = $('#run-status');
+    if (box) box.hidden = !on;
+    if (sendBtn) {
+      sendBtn.textContent = on ? '停止' : '发送';
+      sendBtn.classList.toggle('is-stop', on);
+    }
+  }
+
+  function stopRun() {
+    if (activeCtrl) activeCtrl.abort();
+  }
+
+  function renderStopped(view) {
+    stepsEl.querySelector('.step.running')?.remove();
+    view.bubble.innerHTML = '<div class="answer-head"><span class="status stopped">已停止</span></div>';
+    const el = callout('clarification', '运行已中断', '你中断了这次运行，没有生成结果。重新提问即可。');
+    view.bubble.appendChild(el);
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'link-btn';
+    again.textContent = '重跑这一问';
+    again.addEventListener('click', () => submit(lastQuestion));
+    view.bubble.appendChild(again);
   }
 
   function syncIntro() {
@@ -436,6 +473,8 @@
     if (step.key === 'guard' && Array.isArray(step.checks)) renderChecks(step.checks);
     if (step.key === 'generate' && step.sql) sqlEl.textContent = step.sql;
     if (step.key === 'repair' && step.sql) sqlEl.textContent = step.sql;
+    const rs = $('#run-status-text');
+    if (rs) rs.textContent = `正在${step.title}…`;
     scrollBottom();
   }
 
@@ -530,7 +569,19 @@
 
     const head = document.createElement('div');
     head.className = 'result-head';
-    head.innerHTML = `<span>结果</span><span>${data.row_count} 行${data.truncated ? ' · 已截断' : ''}</span>`;
+    head.innerHTML = '<span>结果</span>';
+    const right = document.createElement('span');
+    right.className = 'result-right';
+    right.textContent = `${data.row_count} 行${data.truncated ? ' · 已截断' : ''}`;
+    if (rows.length) {
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'link-btn';
+      copy.textContent = '复制 CSV';
+      copy.addEventListener('click', () => copyCsv(data));
+      right.appendChild(copy);
+    }
+    head.appendChild(right);
 
     const table = document.createElement('div');
     table.className = 'table-wrap';
@@ -548,6 +599,32 @@
       wrap.appendChild(note);
     }
     return wrap;
+  }
+
+  async function copyCsv(data) {
+    const esc2 = (v) => {
+      const t = v == null ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const lines = [(data.columns || []).map(esc2).join(',')]
+      .concat((data.rows || []).map((r) => r.map(esc2).join(',')));
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('已复制 CSV');
+      return;
+    } catch { /* 退回到 execCommand */ }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    toast(ok ? '已复制 CSV' : '复制失败，请手动选择');
+
   }
 
   function renderFinal(view, data) {
@@ -607,9 +684,18 @@
     const meta = document.createElement('div');
     meta.className = 'meta-row';
     const bits = [fmtDuration(data.timings?.total_ms || 0), `${data.row_count || 0} 行`];
+    if (Array.isArray(data.trace) && data.trace.length) bits.push(`${data.trace.length} 步`);
     if (data.scope) bits.push(`数据域 ${esc(data.scope)}`);
     if (data.mode !== 'live') bits.push('离线模板');
-    meta.textContent = bits.join(' · ');
+    meta.innerHTML = `<span>${bits.join(' · ')}</span>`;
+    if (data.question && data.status === 'ok') {
+      const again = document.createElement('button');
+      again.type = 'button';
+      again.className = 'link-btn';
+      again.textContent = '重跑';
+      again.addEventListener('click', () => submit(data.question));
+      meta.appendChild(again);
+    }
     bubble.appendChild(meta);
 
     evidenceEl.innerHTML = (data.evidence || []).map((e) => `
@@ -689,8 +775,14 @@
   }
 
   // ------------------------------------------------------------------ events
+  $('#stop-run').addEventListener('click', stopRun);
+
   $('#composer').addEventListener('submit', (e) => {
     e.preventDefault();
+    if (busy) {
+      stopRun();
+      return;
+    }
     const q = input.value;
     input.value = '';
     autoGrow();
@@ -727,6 +819,11 @@
       if ($('#login').hidden) {
         palette.open ? closePalette() : openPalette();
       }
+      return;
+    }
+    if (e.key === 'Escape' && busy) {
+      e.preventDefault();
+      stopRun();
       return;
     }
     if (e.key === 'Escape' && palette.open) {

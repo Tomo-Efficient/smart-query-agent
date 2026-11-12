@@ -41,6 +41,10 @@
     </div>
 
     <div class="composer-wrap">
+      <div class="run-status" id="run-status" hidden>
+        <span class="rs-dot"></span><span id="run-status-text">运行中</span>
+        <button type="button" class="link-btn" id="stop-run">停止 <kbd>Esc</kbd></button>
+      </div>
       <form class="composer" id="composer">
         <textarea id="input" rows="1" placeholder="问一句，例如：上月各渠道保费收入是多少" maxlength="500" autocomplete="off"></textarea>
         <button class="send" id="send" type="submit">发送</button>
