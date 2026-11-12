@@ -14,6 +14,7 @@
   let busy = false;
   let semanticsLoaded = false;
   const session = { user: null, conversationId: null };
+  let examplesCache = [];
 
   const STATUS = {
     ok: ['ok', '已完成'],
@@ -84,6 +85,9 @@
     if (message) {
       err.hidden = false;
       err.textContent = message;
+      err.classList.remove('shake');
+      void err.offsetWidth;
+      err.classList.add('shake');
     }
     setTimeout(() => $('#login-user')?.focus(), 60);
   }
@@ -130,6 +134,101 @@
     location.reload();
   }
 
+  // ------------------------------------------------------------------ 指令面板
+  const palette = { open: false, items: [], idx: 0, root: null, input: null, list: null };
+
+  function paletteSource() {
+    const qs = examplesCache.slice(0, 6).map((q) => ({ k: '问', t: q, run: () => submit(q) }));
+    const acts = [
+      { k: '动作', t: '新对话', run: () => location.reload() },
+      {
+        k: '动作',
+        t: '切换运行轨迹',
+        run: () => $('#toggle-inspector').click(),
+      },
+      { k: '动作', t: '打开语义资产', run: () => toggleDrawer(true) },
+    ];
+    if (session.user?.role === 'admin') acts.push({ k: '动作', t: '打开审计日志', run: () => openAudit() });
+    acts.push({ k: '动作', t: '退出登录', run: () => logout() });
+    return [...qs, ...acts];
+  }
+
+  function paletteRender() {
+    const q = palette.input.value.trim().toLowerCase();
+    palette.items = paletteSource().filter((it) => !q || it.t.toLowerCase().includes(q));
+    palette.idx = Math.min(palette.idx, Math.max(0, palette.items.length - 1));
+    palette.list.innerHTML = palette.items.length
+      ? palette.items.map((it, i) => `
+        <div class="palette-item" role="option" data-i="${i}" aria-selected="${i === palette.idx}">
+          <span class="k">${it.k}</span><span class="t">${esc(it.t)}</span>
+        </div>`).join('')
+      : '<div class="palette-empty">没有匹配的指令</div>';
+    palette.list.querySelectorAll('.palette-item').forEach((el) => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        paletteRun(Number(el.dataset.i));
+      });
+    });
+  }
+
+  function paletteRun(i) {
+    const item = palette.items[i];
+    if (!item) return;
+    closePalette();
+    setTimeout(() => item.run(), 30);
+  }
+
+  function openPalette() {
+    if (!palette.root) {
+      const layer = document.createElement('div');
+      layer.className = 'palette-layer';
+      layer.innerHTML = `
+        <div class="palette" role="dialog" aria-label="指令">
+          <input id="palette-input" placeholder="输入问题，或搜索指令…" autocomplete="off" />
+          <div class="palette-list" role="listbox"></div>
+          <div class="palette-foot"><span>↑↓ 选择</span><span>Enter 执行</span><span>Esc 关闭</span></div>
+        </div>`;
+      layer.addEventListener('mousedown', (e) => {
+        if (e.target === layer) closePalette();
+      });
+      document.body.appendChild(layer);
+      palette.root = layer;
+      palette.input = layer.querySelector('#palette-input');
+      palette.list = layer.querySelector('.palette-list');
+      palette.input.addEventListener('input', () => {
+        palette.idx = 0;
+        paletteRender();
+      });
+      palette.input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          palette.idx = Math.min(palette.idx + 1, palette.items.length - 1);
+          paletteRender();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          palette.idx = Math.max(palette.idx - 1, 0);
+          paletteRender();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          paletteRun(palette.idx);
+        }
+      });
+    }
+    palette.root.hidden = false;
+    palette.idx = 0;
+    palette.input.value = '';
+    paletteRender();
+    palette.open = true;
+    setTimeout(() => palette.input.focus(), 20);
+  }
+
+  function closePalette() {
+    if (!palette.root) return;
+    palette.root.hidden = true;
+    palette.open = false;
+    input.focus();
+  }
+
   // ------------------------------------------------------------------ 审计
   async function openAudit() {
     $('#audit-body').innerHTML = '<div class="placeholder">加载中…</div>';
@@ -173,7 +272,7 @@
         mode.innerHTML = `<span class="dot"></span>离线演示 <b>模板生成</b>`;
       }
       $('#card-count').textContent = h.cards;
-      $('#footer-note').textContent = '只读 · 结果上限 200 行';
+      $('#footer-note').textContent = '只读 · 上限 200 行 · ⌘K 指令';
       if (!h.ok) toast('数据库文件缺失，请先运行 make data');
     } catch {
       toast('后端未连接：请运行 make dev');
@@ -181,6 +280,7 @@
 
     try {
       const { examples } = await (await fetch('/api/examples')).json();
+      examplesCache = examples || [];
       const box = $('#suggest');
       examples.slice(0, 4).forEach((q) => {
         const btn = document.createElement('button');
@@ -289,7 +389,7 @@
     el.innerHTML = `
       <div class="bubble">
         <div class="answer-head"><span class="status running">运行中</span></div>
-        <div class="answer" style="color:var(--faint);font-family:var(--sans);font-size:13px">正在检索语义资产并规划查询…</div>
+        <div class="answer is-pending">正在检索语义资产并规划查询…</div>
       </div>`;
     inner.appendChild(el);
     scrollBottom();
@@ -397,8 +497,8 @@
   function kpiStrip(items) {
     const box = document.createElement('div');
     box.className = 'kpis';
-    box.innerHTML = items.map((k) => `
-      <div class="kpi"><span class="kpi-k">${esc(k.label)}</span><span class="kpi-v">${k.html}</span></div>`).join('');
+    box.innerHTML = items.map((k, i) => `
+      <div class="kpi" style="--i:${i}"><span class="kpi-k">${esc(k.label)}</span><span class="kpi-v">${k.html}</span></div>`).join('');
     return box;
   }
 
@@ -621,6 +721,17 @@
     $('#backdrop').classList.remove('show');
   });
   document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if ($('#login').hidden) {
+        palette.open ? closePalette() : openPalette();
+      }
+      return;
+    }
+    if (e.key === 'Escape' && palette.open) {
+      closePalette();
+      return;
+    }
     if (e.key === 'Escape') {
       toggleDrawer(false);
       $('#audit-drawer').classList.remove('open');

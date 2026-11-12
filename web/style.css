@@ -394,3 +394,98 @@ kbd { border: 1px solid var(--line); padding: 0 4px; font-family: var(--mono); f
     background: var(--bg); border-left: 0; border-top: 1px solid var(--ink); overflow-y: auto;
   }
 }
+
+/* ==========================================================================
+   借用清单（黑白线框之下只保留运动与结构，不加颜色）
+   · hairline 实线边框、tabular 数字、紧凑圆角 —— Beautiful UI 的 token 思路
+   · ⌘K 命令面板、空状态、粘性表头 —— shadcn/ui 的交互约定
+   · 数字 pop-in / 面板展开 / 错误抖动 —— transitions.dev 的过渡配方
+   · 轨迹分步、streaming 占位 —— beUI / Beautiful UI 的 agent 状态组件
+   ========================================================================== */
+
+:root {
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --ease: cubic-bezier(.2, .6, .2, 1);
+}
+
+:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+
+/* 轨迹：用网格列宽做“面板展开”，而不是 display:none */
+.layout { transition: grid-template-columns var(--dur) var(--ease); }
+#inspector { transition: opacity var(--dur) var(--ease); overflow-x: hidden; }
+.layout.hide-inspector { grid-template-columns: minmax(0, 1fr) 0px; }
+.layout.hide-inspector #inspector {
+  opacity: 0; pointer-events: none; border-left-color: transparent;
+}
+
+/* 消息进入：问句从右侧滑入、回答自下而上浮现 */
+@keyframes sq-in-right { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
+@keyframes sq-fade-up { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes sq-kpi { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes sq-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+@keyframes sq-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+.msg.user .bubble { animation: sq-in-right var(--dur) var(--ease) both; }
+.msg.agent .bubble > * { animation: sq-fade-up var(--dur) var(--ease) both; }
+.kpi { animation: sq-kpi var(--dur) var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.folds, .meta-row, .assumptions { animation: sq-fade-up var(--dur) var(--ease) both; }
+
+/* 运行中：占位文字做极轻的扫光，而不是转圈 */
+.status.running { border-style: dashed; }
+.bubble .answer.is-pending { color: var(--muted); animation: sq-pulse 1.5s ease-in-out infinite; }
+
+/* 表格：行悬停与首列固定 */
+table.result tbody tr:hover td { background: #fafafa; }
+table.result th:first-child, table.result td:first-child { position: sticky; left: 0; background: var(--bg); }
+table.result tbody tr:hover td:first-child { background: #fafafa; }
+table.result thead th:first-child { background: var(--soft); }
+
+/* 登录错误抖动 */
+.shake { animation: sq-shake 260ms var(--ease) both; }
+
+/* ⌘K 命令面板 */
+.palette-layer {
+  position: fixed; inset: 0; z-index: 95; background: rgba(17, 17, 17, .22);
+  display: flex; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px;
+}
+.palette {
+  width: 100%; max-width: 540px; background: var(--bg); border: 1px solid var(--ink);
+  animation: sq-fade-up var(--dur) var(--ease) both;
+}
+.palette input {
+  width: 100%; height: 46px; padding: 0 14px; border: 0; border-bottom: 1px solid var(--ink);
+  font-family: inherit; font-size: 14px; outline: 0; background: transparent;
+}
+.palette-list { max-height: 420px; overflow-y: auto; padding: 6px 0; }
+.palette-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  font-size: 13px; color: var(--ink-soft); cursor: pointer;
+}
+.palette-item .k {
+  flex: 0 0 auto; font-size: 10px; letter-spacing: .1em; color: var(--faint);
+  border: 1px solid var(--line); padding: 0 5px;
+}
+.palette-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item .hint { color: var(--faint); font-size: 11px; }
+.palette-item[aria-selected="true"] { background: var(--ink); color: #fff; }
+.palette-item[aria-selected="true"] .k,
+.palette-item[aria-selected="true"] .hint { color: #cfcfcf; border-color: #4a4a4a; }
+.palette-empty { padding: 14px; font-size: 12px; color: var(--faint); }
+.palette-foot {
+  display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line);
+  font-size: 10.5px; color: var(--faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.user .bubble, .msg.agent .bubble > *, .kpi, .folds, .meta-row, .assumptions,
+  .palette, .shake { animation: none !important; }
+  .bubble .answer.is-pending { animation: none; color: var(--muted); }
+  .layout, #inspector { transition: none; }
+}
