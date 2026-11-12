@@ -68,7 +68,7 @@ class Agent:
         usage.add(gen.usage)
         trace.append(self._step("generate", "生成 SQL", "done" if gen.sql else "warn",
                                 gen.plan or ("离线模板未覆盖该问法" if gen.mode == "mock" else "未生成 SQL"),
-                                t0, {"mode": gen.mode, "sql": gen.sql}))
+                                t0, {"mode": gen.mode, "sql": guard.pretty_sql(gen.sql)}))
 
         if gen.needs_clarification or not gen.sql:
             return self._respond(
@@ -105,7 +105,7 @@ class Agent:
             fixed, rep_usage = generator.repair(question, sql, g.error or "", self.layer, self.llm)
             usage.add(rep_usage)
             trace.append(self._step("repair", f"修复 SQL（第 {attempt + 1} 次）", "done" if fixed else "fail",
-                                    self._brief(fixed) or "修复未返回有效 SQL", t0, {"sql": fixed}))
+                                    self._brief(fixed) or "修复未返回有效 SQL", t0, {"sql": guard.pretty_sql(fixed)}))
             if not fixed:
                 return self._respond(
                     question, trace, started, usage, status="blocked",
@@ -163,6 +163,7 @@ class Agent:
             "question": question,
             "answer": answer,
             "sql": sql,
+            "sql_pretty": guard.pretty_sql(sql),
             "columns": result.columns if result and result.ok else [],
             "rows": result.rows if result and result.ok else [],
             "row_count": len(result.rows) if result and result.ok else 0,

@@ -143,6 +143,16 @@ def apply_scope(tree: exp.Expression, scope: DataScope) -> tuple[bool, str]:
     return True, ""
 
 
+def pretty_sql(sql: str, *, dialect: str = "duckdb") -> str:
+    """把 SQL 排成多行，方便人读；解析不了就原样返回（展示用，不影响执行）。"""
+    if not sql or not sql.strip():
+        return sql
+    try:
+        return sqlglot.parse_one(sql, read=dialect).sql(dialect=dialect, pretty=True)
+    except Exception:
+        return sql
+
+
 def check_sql(sql: str, layer: SemanticLayer, scope: DataScope | None = None) -> GuardResult:
     checks: list[Check] = []
     allowed = layer.table_names()

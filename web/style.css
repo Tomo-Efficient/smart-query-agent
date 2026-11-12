@@ -186,7 +186,7 @@ table.result td.num, table.result th.num { width: 1%; white-space: nowrap; }
 .fold summary::before { content: "+"; margin-right: 8px; color: var(--faint); }
 .fold[open] summary::before { content: "−"; color: var(--ink); }
 .fold summary .count { margin-left: auto; color: var(--faint); font-size: 11px; }
-.fold-body { padding: 0 12px 12px; max-height: 320px; overflow: auto; }
+.fold-body { padding: 0 12px 12px; }
 
 pre.sql {
   margin: 0; padding: 12px; background: var(--ink); color: #f2f2f2;
@@ -273,7 +273,7 @@ kbd { border: 1px solid var(--line); padding: 0 4px; font-family: var(--mono); f
 }
 .ev b { font-weight: 500; color: var(--ink-soft); }
 
-.inspector pre.sql { margin-top: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inspector pre.sql { margin-top: 0; white-space: pre-wrap; overflow-wrap: break-word; }
 
 /* ---------------------------------------------------------------- 登录 */
 .login-layer {

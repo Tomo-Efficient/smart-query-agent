@@ -589,7 +589,8 @@
     if (data.sql || (data.checks || []).length) {
       const folds = document.createElement('div');
       folds.className = 'folds';
-      if (data.sql) folds.appendChild(sqlFold(data.sql));
+      const sqlText = data.sql_pretty || data.sql;
+      if (sqlText) folds.appendChild(sqlFold(sqlText));
       if ((data.checks || []).length) {
         const det = document.createElement('details');
         det.className = 'fold';
@@ -615,7 +616,7 @@
       <span class="ev ${e.kind}" title="相关度 ${e.score}">
         <b>${esc(e.title)}</b> · ${esc(e.kind)}
       </span>`).join('') || '<span class="ev">无命中</span>';
-    sqlEl.textContent = data.sql || '-- 本次未生成 SQL';
+    sqlEl.textContent = data.sql_pretty || data.sql || '-- 本次未生成 SQL';
     if (Array.isArray(data.checks) && data.checks.length) renderChecks(data.checks);
     totalTimeEl.textContent = fmtDuration(data.timings?.total_ms || 0);
     scrollBottom();
