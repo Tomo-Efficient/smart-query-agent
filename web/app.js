@@ -118,6 +118,11 @@
       session.user = data.user;
       $('#login').hidden = true;
       $('#app').hidden = false;
+    if (window.innerWidth < 1180) {
+      $('.layout').classList.add('hide-inspector');
+    } else {
+      $('#toggle-inspector').classList.add('active');
+    }
       document.querySelector('.topbar').style.display = '';
       setUserChip(session.user);
       await startApp();
@@ -136,9 +141,9 @@
   function newChat() {
     session.conversationId = null;
     $('#thread').querySelectorAll('.msg').forEach((el) => el.remove());
-    $('#intro')?.remove();
     $('#new-chat').hidden = true;
     resetInspector();
+    location.reload();
   }
 
   // ------------------------------------------------------------------ 审计
@@ -280,11 +285,17 @@
     }
   }
 
+  function syncIntro() {
+    const hasMsg = !!inner.querySelector('.msg');
+    inner.classList.toggle('only-intro', !hasMsg);
+  }
+
   function addUser(text) {
     const el = document.createElement('div');
     el.className = 'msg user';
     el.innerHTML = `<div class="avatar">你</div><div class="bubble">${esc(text)}</div>`;
     inner.appendChild(el);
+    syncIntro();
     scrollBottom();
   }
 
@@ -354,52 +365,171 @@
   }
 
   // ------------------------------------------------------------------ final
+  function fmtKpi(v, isPct) {
+    if (typeof v !== 'number') return esc(fmtCell(v));
+    if (isPct) return `${v.toFixed(2)}%`;
+    if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`;
+    if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(1)} 万`;
+    return esc(fmtCell(v));
+  }
+
+  function buildKpis(data) {
+    const rows = data.rows || [];
+    const cols = data.columns || [];
+    if (!rows.length) return [];
+    const num = (v) => (typeof v === 'number' ? v : null);
+    const valIdx = cols
+      .map((c, i) => (rows.some((r) => num(r[i]) !== null) && !/月|日期|时间|date|month/i.test(c) ? i : -1))
+      .filter((i) => i >= 0);
+    if (!valIdx.length || valIdx.length > 2) return [];
+
+    const i = valIdx[0];
+    const name = cols[i];
+    const isPct = /率|占比|比例|ratio|rate|share/i.test(name);
+    const isAvg = /均|平均|avg/i.test(name);
+
+    if (rows.length === 1) {
+      return [{ label: name, html: fmtKpi(rows[0][i], isPct) }];
+    }
+
+    const labelIdx = cols.findIndex((c, k) => k !== i && rows.every((r) => num(r[k]) === null));
+    const labelOf = (r) => (labelIdx >= 0 ? String(r[labelIdx] ?? '') : '');
+    const vals = rows.map((r) => num(r[i]) ?? 0);
+    const maxV = Math.max(...vals);
+    const minV = Math.min(...vals);
+    const maxRow = rows[vals.indexOf(maxV)];
+    const out = [];
+
+    if (!isPct && !isAvg) {
+      out.push({ label: '合计', html: fmtKpi(vals.reduce((a, b) => a + b, 0), false) });
+    }
+    out.push({ label: `最高${labelOf(maxRow) ? ' · ' + labelOf(maxRow) : ''}`, html: fmtKpi(maxV, isPct) });
+    if (isPct && rows.length > 2) {
+      const minRow = rows[vals.indexOf(minV)];
+      out.push({ label: `最低${labelOf(minRow) ? ' · ' + labelOf(minRow) : ''}`, html: fmtKpi(minV, isPct) });
+    }
+    return out.slice(0, 3);
+  }
+
+  function kpiStrip(items) {
+    const box = document.createElement('div');
+    box.className = 'kpis';
+    box.innerHTML = items.map((k) => `
+      <div class="kpi"><span class="kpi-k">${esc(k.label)}</span><span class="kpi-v">${k.html}</span></div>`).join('');
+    return box;
+  }
+
+  function callout(kind, title, text) {
+    const el = document.createElement('div');
+    el.className = `callout ${kind}`;
+    el.innerHTML = `<span class="callout-ic" aria-hidden="true">${kind === 'error' ? '!' : kind === 'blocked' ? '⛔' : '?'}</span>
+      <div class="callout-body"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
+    return el;
+  }
+
+  function checksList(checks) {
+    const box = document.createElement('div');
+    box.className = 'checks';
+    box.innerHTML = (checks || []).map((c) => `<div class="check ${c.status === 'pass' ? 'pass' : 'fail'}">
+      <span class="ic">${c.status === 'pass' ? '✓' : '✗'}</span>
+      <span><b>${esc(c.name)}</b> · ${esc(c.detail)}</span></div>`).join('');
+    return box;
+  }
+
+  function resultBlock(data) {
+    const wrap = document.createElement('div');
+    wrap.className = 'result-block';
+    const cols = data.columns || [];
+    const rows = data.rows || [];
+    const numeric = cols.map((_, i) => rows.some((r) => typeof r[i] === 'number'));
+
+    const head = document.createElement('div');
+    head.className = 'result-head';
+    head.innerHTML = `<span>结果</span><span>${data.row_count} 行${data.truncated ? ' · 已截断' : ''}</span>`;
+
+    const table = document.createElement('div');
+    table.className = 'table-wrap';
+    table.innerHTML = `<table class="result">
+      <thead><tr>${cols.map((c, i) => `<th class="${numeric[i] ? 'num' : ''}">${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0, 100).map((r) => `<tr>${r.map((v, i) =>
+        `<td class="${numeric[i] ? 'num' : ''}">${esc(fmtCell(v))}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+
+    wrap.append(head, table);
+    if (data.row_count > 100) {
+      const note = document.createElement('div');
+      note.className = 'result-note';
+      note.textContent = `仅显示前 100 行，共 ${data.row_count} 行`;
+      wrap.appendChild(note);
+    }
+    return wrap;
+  }
+
   function renderFinal(view, data) {
     const [cls, label] = STATUS[data.status] || ['ok', data.status];
     stepsEl.querySelector('.step.running')?.remove();
-    view.bubble.querySelector('.status')?.remove();
-    view.bubble.querySelector('.answer')?.remove();
+    const bubble = view.bubble;
+    bubble.innerHTML = '';
 
     const head = document.createElement('div');
     head.className = 'answer-head';
     head.innerHTML = `<span class="status ${cls}">${label}</span>`;
+    bubble.appendChild(head);
 
-    const answer = document.createElement('div');
-    answer.className = 'answer';
-    answer.textContent = data.answer || '';
+    if (data.status === 'blocked') {
+      bubble.appendChild(callout('blocked', '请求已拦截', data.answer || ''));
+    } else if (data.status === 'clarification') {
+      bubble.appendChild(callout('clarification', '需要补充一点信息', data.answer || ''));
+    } else if (data.status === 'error') {
+      bubble.appendChild(callout('error', '执行失败', data.answer || '请换一种问法。'));
+    } else {
+      const answer = document.createElement('div');
+      answer.className = 'answer';
+      answer.textContent = data.answer || '';
+      bubble.appendChild(answer);
 
-    view.bubble.innerHTML = '';
-    view.bubble.append(head, answer);
+      const kpis = buildKpis(data);
+      if (kpis.length) bubble.appendChild(kpiStrip(kpis));
+      if (data.row_count > 0) bubble.appendChild(resultBlock(data));
+    }
 
     if (data.assumptions?.length) {
       const box = document.createElement('div');
       box.className = 'assumptions';
-      box.innerHTML = data.assumptions.map((a) => `<span class="tag">口径：${esc(a)}</span>`).join('');
-      view.bubble.appendChild(box);
+      box.innerHTML = data.assumptions.map((a) => `<span class="tag">口径 · ${esc(a)}</span>`).join('');
+      bubble.appendChild(box);
+    }
+
+    if (data.sql || (data.checks || []).length) {
+      const folds = document.createElement('div');
+      folds.className = 'folds';
+      if (data.sql) folds.appendChild(sqlFold(data.sql));
+      if ((data.checks || []).length) {
+        const det = document.createElement('details');
+        det.className = 'fold';
+        det.innerHTML = `<summary>校验项<span class="count">${data.checks.length} 项</span></summary>`;
+        const body = document.createElement('div');
+        body.className = 'fold-body';
+        body.appendChild(checksList(data.checks));
+        det.appendChild(body);
+        folds.appendChild(det);
+      }
+      bubble.appendChild(folds);
     }
 
     const meta = document.createElement('div');
     meta.className = 'meta-row';
     const bits = [
-      `路由 <b>${esc(data.route?.label || '—')}</b>`,
-      `模型 <b>${esc(data.mode === 'live' ? data.model : '离线模板')}</b>`,
-      `耗时 <b>${data.timings?.total_ms ? data.timings.total_ms + ' ms' : '<1 ms'}</b>`,
-      `SQL <b>${data.timings?.sql_ms ?? 0} ms</b>`,
-      `Token <b>${(data.usage?.input_tokens || 0)} / ${(data.usage?.output_tokens || 0)}</b>`,
+      fmtDuration(data.timings?.total_ms || 0),
+      `${data.row_count || 0} 行`,
+      esc(data.route?.label || '—'),
+      data.mode === 'live' ? esc(data.model) : '离线模板',
     ];
-    if (data.scope) bits.push(`数据域 <b>${esc(data.scope)}</b>`);
-    meta.innerHTML = bits.map((b) => `<span>${b}</span>`).join('');
-    view.bubble.appendChild(meta);
+    if (data.scope) bits.push(`数据域 ${esc(data.scope)}`);
+    if (data.usage?.input_tokens) bits.push(`token ${data.usage.input_tokens} / ${data.usage.output_tokens}`);
+    meta.textContent = bits.join(' · ');
+    bubble.appendChild(meta);
 
-    if (data.row_count > 0) {
-      view.bubble.appendChild(tableFold(data));
-    }
-
-    if (data.sql) {
-      view.bubble.appendChild(sqlFold(data.sql));
-    }
-
-    // inspector
     evidenceEl.innerHTML = (data.evidence || []).map((e) => `
       <span class="ev ${e.kind}" title="相关度 ${e.score}">
         <b>${esc(e.title)}</b> · ${esc(e.kind)}
@@ -408,34 +538,6 @@
     if (Array.isArray(data.checks) && data.checks.length) renderChecks(data.checks);
     totalTimeEl.textContent = fmtDuration(data.timings?.total_ms || 0);
     scrollBottom();
-  }
-
-  function tableFold(data) {
-    const det = document.createElement('details');
-    det.className = 'fold';
-    const truncated = data.truncated ? ' · 已截断' : '';
-    det.innerHTML = `<summary>结果表<span class="count">${data.row_count} 行${truncated}</span></summary>`;
-
-    const wrap = document.createElement('div');
-    wrap.className = 'fold-body';
-    const cols = data.columns || [];
-    const numeric = cols.map((_, i) => data.rows?.some((r) => typeof r[i] === 'number'));
-    const table = document.createElement('div');
-    table.className = 'table-wrap';
-    table.innerHTML = `<table class="result">
-      <thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-      <tbody>${(data.rows || []).slice(0, 100).map((r) => `<tr>${r.map((v, i) =>
-        `<td class="${numeric[i] ? 'num' : ''}">${esc(fmtCell(v))}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table>`;
-    wrap.appendChild(table);
-    if (data.row_count > 100) {
-      const note = document.createElement('div');
-      note.className = 'empty-rows';
-      note.textContent = `仅显示前 100 行，共 ${data.row_count} 行`;
-      wrap.appendChild(note);
-    }
-    det.appendChild(wrap);
-    return det;
   }
 
   function sqlFold(sql) {
@@ -465,11 +567,11 @@
   }
 
   function renderFailure(view, message) {
-    view.bubble.innerHTML = `
-      <div class="answer-head"><span class="status error">执行失败</span></div>
-      <div class="answer" style="font-family:var(--sans);font-size:13.5px">${esc(message)}</div>
-      <div class="meta-row">可以重试一次，或把问题描述得更具体（指标 + 时间 + 维度）。</div>`;
-    toast('请求失败');
+    view.bubble.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'answer-head';
+    head.innerHTML = '<span class="status error">执行失败</span>';
+    view.bubble.append(head, callout('error', '这次没跑通', message));
     scrollBottom();
   }
 
@@ -558,6 +660,11 @@
   });
   $('#logout').addEventListener('click', logout);
   $('#new-chat').addEventListener('click', newChat);
+  $('#toggle-inspector').addEventListener('click', () => {
+    const layout = $('.layout');
+    layout.classList.toggle('hide-inspector');
+    $('#toggle-inspector').classList.toggle('active', !layout.classList.contains('hide-inspector'));
+  });
   $('#open-audit').addEventListener('click', openAudit);
 
   (async () => {
@@ -567,7 +674,13 @@
       return;
     }
     $('#app').hidden = false;
+    if (window.innerWidth < 1180) {
+      $('.layout').classList.add('hide-inspector');
+    } else {
+      $('#toggle-inspector').classList.add('active');
+    }
     if (session.user) setUserChip(session.user);
+    syncIntro();
     await startApp();
   })();
 })();
