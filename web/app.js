@@ -23,22 +23,6 @@
     running: ['running', '运行中'],
   };
 
-  const HINTS = [
-    [/环比|同比/, '时间对比'],
-    [/件均|平均/, '指标口径'],
-    [/占比|结构/, '结构分析'],
-    [/退保/, '比率指标'],
-    [/趋势|每月/, '趋势序列'],
-    [/多少/, '单值查询'],
-    [/手机号|身份证/, '安全拦截演示'],
-    [/减去|然后/, '澄清演示'],
-  ];
-
-  function hintFor(q) {
-    for (const [re, hint] of HINTS) if (re.test(q)) return hint;
-    return '自由提问';
-  }
-
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -189,7 +173,7 @@
         mode.innerHTML = `<span class="dot"></span>离线演示 <b>模板生成</b>`;
       }
       $('#card-count').textContent = h.cards;
-      $('#footer-note').textContent = `只读查询 · 单条 SQL · ${h.tables} 张表 / ${h.cards} 张卡片`;
+      $('#footer-note').textContent = '只读 · 结果上限 200 行';
       if (!h.ok) toast('数据库文件缺失，请先运行 make data');
     } catch {
       toast('后端未连接：请运行 make dev');
@@ -202,7 +186,7 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'chip';
-        btn.innerHTML = `<strong>${esc(q)}</strong><span>${esc(hintFor(q))}</span>`;
+        btn.textContent = q;
         btn.addEventListener('click', () => submit(q));
         box.appendChild(btn);
       });
@@ -293,7 +277,7 @@
   function addUser(text) {
     const el = document.createElement('div');
     el.className = 'msg user';
-    el.innerHTML = `<div class="avatar">你</div><div class="bubble">${esc(text)}</div>`;
+    el.innerHTML = `<div class="bubble">${esc(text)}</div>`;
     inner.appendChild(el);
     syncIntro();
     scrollBottom();
@@ -303,7 +287,6 @@
     const el = document.createElement('div');
     el.className = 'msg agent';
     el.innerHTML = `
-      <div class="avatar">数</div>
       <div class="bubble">
         <div class="answer-head"><span class="status running">运行中</span></div>
         <div class="answer" style="color:var(--faint);font-family:var(--sans);font-size:13px">正在检索语义资产并规划查询…</div>
@@ -368,8 +351,8 @@
   function fmtKpi(v, isPct) {
     if (typeof v !== 'number') return esc(fmtCell(v));
     if (isPct) return `${v.toFixed(2)}%`;
-    if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`;
-    if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(1)} 万`;
+    if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)}亿`;
+    if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(1)}万`;
     return esc(fmtCell(v));
   }
 
@@ -422,7 +405,7 @@
   function callout(kind, title, text) {
     const el = document.createElement('div');
     el.className = `callout ${kind}`;
-    el.innerHTML = `<span class="callout-ic" aria-hidden="true">${kind === 'error' ? '!' : kind === 'blocked' ? '⛔' : '?'}</span>
+    el.innerHTML = `<span class="callout-ic" aria-hidden="true">${kind === 'error' ? '!' : kind === 'blocked' ? '×' : '?'}</span>
       <div class="callout-body"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
     return el;
   }
@@ -442,6 +425,8 @@
     const cols = data.columns || [];
     const rows = data.rows || [];
     const numeric = cols.map((_, i) => rows.some((r) => typeof r[i] === 'number'));
+    const pct = cols.map((c) => /率|占比|比例|ratio|rate|share|percent/i.test(c));
+    const cell = (v, i) => (pct[i] && typeof v === 'number' ? `${v.toFixed(2)}%` : fmtCell(v));
 
     const head = document.createElement('div');
     head.className = 'result-head';
@@ -452,7 +437,7 @@
     table.innerHTML = `<table class="result">
       <thead><tr>${cols.map((c, i) => `<th class="${numeric[i] ? 'num' : ''}">${esc(c)}</th>`).join('')}</tr></thead>
       <tbody>${rows.slice(0, 100).map((r) => `<tr>${r.map((v, i) =>
-        `<td class="${numeric[i] ? 'num' : ''}">${esc(fmtCell(v))}</td>`).join('')}</tr>`).join('')}</tbody>
+        `<td class="${numeric[i] ? 'num' : ''}">${esc(cell(v, i))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table>`;
 
     wrap.append(head, table);
@@ -490,7 +475,8 @@
 
       const kpis = buildKpis(data);
       if (kpis.length) bubble.appendChild(kpiStrip(kpis));
-      if (data.row_count > 0) bubble.appendChild(resultBlock(data));
+      const single = data.row_count === 1 && (data.columns || []).length <= 2 && kpis.length > 0;
+      if (data.row_count > 0 && !single) bubble.appendChild(resultBlock(data));
     }
 
     if (data.assumptions?.length) {
@@ -519,14 +505,9 @@
 
     const meta = document.createElement('div');
     meta.className = 'meta-row';
-    const bits = [
-      fmtDuration(data.timings?.total_ms || 0),
-      `${data.row_count || 0} 行`,
-      esc(data.route?.label || '—'),
-      data.mode === 'live' ? esc(data.model) : '离线模板',
-    ];
+    const bits = [fmtDuration(data.timings?.total_ms || 0), `${data.row_count || 0} 行`];
     if (data.scope) bits.push(`数据域 ${esc(data.scope)}`);
-    if (data.usage?.input_tokens) bits.push(`token ${data.usage.input_tokens} / ${data.usage.output_tokens}`);
+    if (data.mode !== 'live') bits.push('离线模板');
     meta.textContent = bits.join(' · ');
     bubble.appendChild(meta);
 
