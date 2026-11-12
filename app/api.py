@@ -11,7 +11,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -110,6 +110,28 @@ def _run(user: auth.Principal, req: AskRequest, ip: str) -> dict[str, Any]:
         store.add_message(cid, user.id, req.question, payload)
     store.add_audit(None if user.id == 0 else store.get_user_by_id(user.id), ip, cid, req.question, payload)
     return payload
+
+
+@app.get("/api/conversations")
+def conversations(user: auth.Principal = Depends(auth.require_user)) -> dict[str, Any]:
+    return {"items": store.list_conversations(user.id, limit=80)}
+
+
+@app.get("/api/conversations/{conversation_id}")
+def conversation_detail(conversation_id: str,
+                        user: auth.Principal = Depends(auth.require_user)) -> dict[str, Any]:
+    msgs = store.conversation_messages(conversation_id, user.id)
+    if msgs is None:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {"id": conversation_id, "messages": msgs}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def conversation_delete(conversation_id: str,
+                        user: auth.Principal = Depends(auth.require_user)) -> dict[str, Any]:
+    if not store.delete_conversation(conversation_id, user.id):
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {"ok": True}
 
 
 @app.get("/api/health")

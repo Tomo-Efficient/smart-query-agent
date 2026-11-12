@@ -17,10 +17,8 @@
   <div class="topbar-right">
     <span class="pill" id="as-of">数据截止 <b>—</b></span>
     <span class="pill" id="mode"><b>连接中</b></span>
+    <button class="ghost-btn" id="toggle-history" title="对话历史">历史</button>
     <button class="ghost-btn" id="toggle-inspector" title="显示 / 隐藏轨迹">轨迹</button>
-    <button class="ghost-btn" id="new-chat" hidden>新对话</button>
-    <button class="ghost-btn" id="open-audit" hidden>审计</button>
-    <button class="ghost-btn" id="open-drawer">语义资产 <span id="card-count">—</span></button>
     <div class="user-chip" id="user-chip" hidden>
       <span class="user-name" id="user-name">—</span>
       <span class="user-scope" id="user-scope">—</span>
@@ -29,7 +27,22 @@
   </div>
 </header>
 
-<main class="layout" id="app" hidden>
+<div class="shell" id="app" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="side-top">
+      <button class="side-new" id="new-chat">
+        <span>新对话</span><span class="side-new-plus">+</span>
+      </button>
+    </div>
+    <div class="side-label">最近</div>
+    <nav class="conv-list" id="conv-list"></nav>
+    <div class="side-foot">
+      <button class="side-link" id="open-drawer">语义资产 <span class="side-count" id="card-count">—</span></button>
+      <button class="side-link" id="open-audit" hidden>审计日志</button>
+    </div>
+  </aside>
+
+  <main class="layout">
   <section class="chat">
     <div class="thread" id="thread">
       <div class="thread-inner">
@@ -71,7 +84,8 @@
     <div class="section-label">校验</div>
     <div class="checks" id="checks"></div>
   </aside>
-</main>
+  </main>
+</div>
 
 <div class="login-layer" id="login" hidden>
   <div class="login-card">

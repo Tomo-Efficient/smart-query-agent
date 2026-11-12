@@ -130,10 +130,107 @@
 
   function newChat() {
     session.conversationId = null;
-    $('#thread').querySelectorAll('.msg').forEach((el) => el.remove());
-    $('#new-chat').hidden = true;
-    resetInspector();
     location.reload();
+  }
+
+  function fmtConvTime(iso) {
+    if (!iso) return '';
+    const norm = iso.replace(' ', 'T');
+    const d = new Date(/[Z+]/.test(norm) ? norm : norm + 'Z');
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const today = new Date();
+    const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (same(d, today)) return hm;
+    const y = new Date(today.getTime() - 86400000);
+    if (same(d, y)) return `昨天 ${hm}`;
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`;
+  }
+
+  function markActiveConv() {
+    document.querySelectorAll('.conv-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.id === session.conversationId);
+    });
+  }
+
+  function renderConvList(items) {
+    const box = $('#conv-list');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!items.length) {
+      box.innerHTML = '<div class="conv-empty">还没有对话</div>';
+      return;
+    }
+    items.forEach((it) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'conv-item' + (it.id === session.conversationId ? ' active' : '');
+      btn.dataset.id = it.id;
+      btn.title = it.title || '';
+      const title = document.createElement('span');
+      title.textContent = it.title || '未命名对话';
+      const meta = document.createElement('span');
+      meta.className = 'conv-meta';
+      meta.textContent = `${fmtConvTime(it.updated_at)} · ${it.turns} 轮`;
+      btn.append(title, meta);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'conv-del';
+      del.textContent = '×';
+      del.title = '删除这段对话';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('删除这段对话？')) return;
+        await fetch(`/api/conversations/${it.id}`, { method: 'DELETE' }).catch(() => {});
+        if (it.id === session.conversationId) {
+          newChat();
+          return;
+        }
+        await loadConversations();
+      });
+      btn.appendChild(del);
+      btn.addEventListener('click', () => openConversation(it.id));
+      box.appendChild(btn);
+    });
+  }
+
+  async function loadConversations() {
+    try {
+      const r = await fetch('/api/conversations');
+      if (!r.ok) return;
+      const data = await r.json();
+      renderConvList(data.items || []);
+    } catch { /* 历史加载失败不影响提问 */ }
+  }
+
+  async function openConversation(id) {
+    try {
+      const r = await fetch(`/api/conversations/${id}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      session.conversationId = id;
+      $('#intro')?.remove();
+      $('#thread').querySelectorAll('.msg').forEach((el) => el.remove());
+      resetInspector();
+      (data.messages || []).forEach((m) => {
+        addUser(m.question);
+        const view = addAgentShell();
+        if (m.payload) {
+          stepsEl.innerHTML = '';
+          (m.payload.trace || []).forEach((st) => stepsEl.appendChild(stepEl(st)));
+          renderFinal(view, m.payload);
+        } else {
+          view.bubble.innerHTML = `<div class="answer">${esc(m.question)}</div>`;
+        }
+      });
+      markActiveConv();
+      syncIntro();
+      if (sqlEl) sqlEl.textContent = '-- 历史对话';
+      thread.scrollTop = 0;
+      if (window.innerWidth < 900) toggleHistory(false);
+    } catch { /* 忽略 */ }
   }
 
   // ------------------------------------------------------------------ 指令面板
@@ -143,6 +240,7 @@
     const qs = examplesCache.slice(0, 6).map((q) => ({ k: '问', t: q, run: () => submit(q) }));
     const acts = [
       { k: '动作', t: '新对话', run: () => location.reload() },
+      { k: '动作', t: '对话历史', run: () => toggleHistory(true) },
       {
         k: '动作',
         t: '切换运行轨迹',
@@ -234,8 +332,9 @@
   // ------------------------------------------------------------------ 审计
   async function openAudit() {
     $('#audit-body').innerHTML = '<div class="placeholder">加载中…</div>';
+    $('#app').classList.remove('show-history');
     $('#audit-drawer').classList.add('open');
-    $('#backdrop').classList.add('show');
+    $('#backdrop').classList.add('open');
     try {
       const { rows, stats } = await (await fetch('/api/audit?limit=60')).json();
       const head = stats && stats.users !== undefined ? `<div class="audit-meta">
@@ -356,9 +455,10 @@
           } else if (evt.type === 'final') {
             if (evt.data.conversation_id) {
               session.conversationId = evt.data.conversation_id;
-              $('#new-chat').hidden = false;
+              markActiveConv();
             }
             renderFinal(view, evt.data);
+            loadConversations();
             finished = true;
           } else if (evt.type === 'error') {
             renderFailure(view, evt.message);
@@ -748,8 +848,22 @@
     thread.scrollTop = thread.scrollHeight;
   }
 
-  // ------------------------------------------------------------------ drawer
+  // ------------------------------------------------------------------ 遮罩 / 抽屉
+  function closeOverlays() {
+    toggleDrawer(false);
+    $('#audit-drawer').classList.remove('open');
+    $('#app').classList.remove('show-history');
+    $('#backdrop').classList.remove('open');
+  }
+
+  function toggleHistory(open) {
+    $('#app').classList.toggle('show-history', open);
+    $('#backdrop').classList.toggle('open', open);
+    if (open) loadConversations();
+  }
+
   async function toggleDrawer(open) {
+    if (open) $('#app').classList.remove('show-history');
     $('#drawer').classList.toggle('open', open);
     $('#backdrop').classList.toggle('open', open);
     if (open && !semanticsLoaded) {
@@ -805,14 +919,10 @@
 
   $('#open-drawer').addEventListener('click', () => toggleDrawer(true));
   $('#close-drawer').addEventListener('click', () => toggleDrawer(false));
-  $('#close-audit').addEventListener('click', () => {
-    $('#audit-drawer').classList.remove('open');
-    $('#backdrop').classList.remove('show');
-  });
-  $('#backdrop').addEventListener('click', () => {
-    toggleDrawer(false);
-    $('#audit-drawer').classList.remove('open');
-    $('#backdrop').classList.remove('show');
+  $('#close-audit').addEventListener('click', closeOverlays);
+  $('#backdrop').addEventListener('click', closeOverlays);
+  $('#toggle-history').addEventListener('click', () => {
+    toggleHistory(!$('#app').classList.contains('show-history'));
   });
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
@@ -831,11 +941,7 @@
       closePalette();
       return;
     }
-    if (e.key === 'Escape') {
-      toggleDrawer(false);
-      $('#audit-drawer').classList.remove('open');
-      $('#backdrop').classList.remove('show');
-    }
+    if (e.key === 'Escape') closeOverlays();
   });
 
   $('#login-form').addEventListener('submit', (e) => {
@@ -873,5 +979,6 @@
     if (session.user) setUserChip(session.user);
     syncIntro();
     await startApp();
+    await loadConversations();
   })();
 })();

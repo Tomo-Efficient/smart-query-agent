@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import hmac
 import os
 import secrets
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS messages (
   status          TEXT,
   rows            INTEGER,
   ms              INTEGER,
+  payload         TEXT,
   created_at      TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit (
@@ -105,9 +107,16 @@ def connect() -> Iterator[sqlite3.Connection]:
         con.close()
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(messages)").fetchall()}
+    if cols and "payload" not in cols:
+        con.execute("ALTER TABLE messages ADD COLUMN payload TEXT")
+
+
 def init_db() -> None:
     with connect() as con:
         con.executescript(SCHEMA)
+        _migrate(con)
         if config.SEED_DEMO_USERS:
             for username, name, role, password, orgs, channels in DEMO_USERS:
                 row = con.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
@@ -208,13 +217,59 @@ def recent_messages(conversation_id: str, limit: int = 3) -> list[dict[str, Any]
 
 
 def add_message(conversation_id: str, user_id: int, question: str, payload: dict[str, Any]) -> None:
+    try:
+        blob = json.dumps(payload, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        blob = None
     with connect() as con:
         con.execute(
-            "INSERT INTO messages (conversation_id, user_id, question, answer, sql, status, rows, ms, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO messages (conversation_id, user_id, question, answer, sql, status, rows, ms, payload, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
             (conversation_id, user_id, question, payload.get("answer"), payload.get("sql"),
-             payload.get("status"), payload.get("row_count"), payload.get("timings", {}).get("total_ms"), now()),
+             payload.get("status"), payload.get("row_count"), payload.get("timings", {}).get("total_ms"),
+             blob, now()),
         )
+
+
+def list_conversations(user_id: int, limit: int = 50) -> list[dict[str, Any]]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT c.id, c.title, c.updated_at,"
+            " (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS turns"
+            " FROM conversations c WHERE c.user_id = ?"
+            " ORDER BY c.updated_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def conversation_messages(conversation_id: str, user_id: int) -> list[dict[str, Any]] | None:
+    with connect() as con:
+        own = con.execute("SELECT 1 FROM conversations WHERE id = ? AND user_id = ?",
+                          (conversation_id, user_id)).fetchone()
+        if not own:
+            return None
+        rows = con.execute(
+            "SELECT question, payload, created_at FROM messages WHERE conversation_id = ? ORDER BY id",
+            (conversation_id,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        item = {"question": r["question"], "created_at": r["created_at"]}
+        if r["payload"]:
+            try:
+                item["payload"] = json.loads(r["payload"])
+            except (TypeError, ValueError):
+                item["payload"] = None
+        out.append(item)
+    return out
+
+
+def delete_conversation(conversation_id: str, user_id: int) -> bool:
+    with connect() as con:
+        cur = con.execute("DELETE FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user_id))
+        con.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+    return cur.rowcount > 0
 
 
 def add_audit(user: sqlite3.Row | None, ip: str, conversation_id: str, question: str,
