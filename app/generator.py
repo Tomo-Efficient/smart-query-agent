@@ -29,22 +29,45 @@ SYSTEM = """你是企业数据平台的问数 Agent，把业务问题翻译成 D
 
 硬性规则：
 1. 只能使用 Schema 中列出的表与字段；只生成一条 SELECT（可用 CTE）；不要写 DDL/DML。
-2. 时间基准是数据截止日 {as_of}，"上月"指 {last_month}，"本月"指 {this_month}；不要使用 CURRENT_DATE。
+2. 时间基准：数据截止 {as_of}。{incomplete_month} 尚未结束、数据不完整，**不能**当作"本月"。
+   - "本月 / 上个月 / 上月" = 最近完整月 {base_month}
+   - "环比 / 比上月" = {base_month} 对比 {prev_month}
+   - "同比 / 去年同期" = {base_month} 对比 {yoy_month}
+   - 不要使用 CURRENT_DATE；只有用户明确说"{incomplete_month}"时才用它，并在 assumptions 里提示不完整。
 3. 指标口径以"指标定义"为准；存在多种口径时用默认口径，并把假设写入 assumptions。
 4. 明细优先：问保费收入/环比/同比用 dwd_premium_month；问新单/签单用 dwd_policy 的 sign_date。
 5. 不要臆造字段；不确定就设 needs_clarification=true，并给出一个具体的澄清问题。
 6. 结果列使用中文别名；金额保持"元"，不要自行换算成万元/亿元。
 7. 聚合查询也要能解释：分子分母同口径，除零用 NULLIF。
+8. 保费类指标必须 JOIN dwd_policy 并过滤 policy_status = '有效'，金额用 COALESCE(premium, 0)；
+   不要用 dws_* 预聚合宽表代替明细（那是全口径，含退保/满期历史）。
+9. 比率类指标（退保率/赔付率/占比/环比/同比）统一输出百分比数值：先乘 100，保留 2 位小数，
+   列名带"率"或"百分比"；不要输出 0-1 的小数。
 
 只输出 JSON：
 {{"sql": "...", "plan": "一句话思路", "assumptions": ["..."], "needs_clarification": false, "clarification": ""}}"""
 
 
+def _anchors() -> dict[str, str]:
+    """把"哪个月算本月"一次性算清楚，system 与 user prompt 共用，避免两处口径漂移。"""
+    as_of = config.AS_OF
+    incomplete = as_of.replace(day=1)
+    base = _add_months(incomplete, -1)
+    fmt = lambda d: f"{d.year}-{d.month:02d}"  # noqa: E731
+    return {
+        "as_of": as_of.isoformat(),
+        "base_month": fmt(base),
+        "prev_month": fmt(_add_months(base, -1)),
+        "yoy_month": fmt(_add_months(base, -12)),
+        "incomplete_month": fmt(incomplete),
+    }
+
+
 def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer,
             history: list[dict] | None = None) -> str:
+    a = _anchors()
     as_of = config.AS_OF
-    last_month = f"{as_of.year}-{as_of.month - 1:02d}" if as_of.month > 1 else f"{as_of.year - 1}-12"
-    this_month = f"{as_of.year}-{as_of.month:02d}"
+    last_month = a["base_month"]
 
     metric_hits = [h for h in hits if h.card.kind == "metric"][:3]
     other_hits = [h for h in hits if h.card.kind != "metric"][:6]
@@ -62,8 +85,9 @@ def _prompt(question: str, hits: list[Hit], route: Route, layer: SemanticLayer,
                 lines.append(f"  上一条 SQL：{' '.join(sql.split())[:300]}")
         history_block = "\n## 对话历史（用于理解指代，必要时沿用条件）\n" + "\n".join(lines) + "\n"
 
-    return f"""## 数据截止
-{as_of.isoformat()}（上月={last_month}，本月={this_month}，本月不完整）
+    return f"""## 时间基准
+数据截止 {a['as_of']}。最近完整月 = {a['base_month']}；环比基准 = {a['prev_month']}；
+同比基准 = {a['yoy_month']}；{a['incomplete_month']} 数据不完整，不要当本月用。
 
 ## Schema
 {layer.schema_prompt()}
@@ -96,11 +120,7 @@ def generate(question: str, hits: list[Hit], route: Route, layer: SemanticLayer,
 
     try:
         data, usage = llm.chat_json(
-            SYSTEM.format(
-                as_of=config.AS_OF.isoformat(),
-                last_month=_month_shift(config.AS_OF, -1),
-                this_month=_month_shift(config.AS_OF, 0),
-            ),
+            SYSTEM.format(**_anchors()),
             _prompt(question, hits, route, layer, history),
         )
     except LLMError as exc:

@@ -85,8 +85,10 @@ cards:
     title: 退保率
     tags: [退保率, 退保, 流失]
     text: |
-      默认口径：退保件数 / 有效保单件数。退保件数来自 dwd_surrender，必须
-      COUNT(DISTINCT policy_id) 去重（存在重复推送）；分母用同期有效保单件数。
+      默认口径：当月退保件数 / 当前有效保单存量。
+      - 分子：dwd_surrender 中 surrender_date 落在该自然月的保单，COUNT(DISTINCT policy_id) 去重
+      - 分母：dwd_policy 中 policy_status='有效' 的全部保单（存量，**不按月份切**）
+      - 结果乘以 100，保留 2 位小数，列名如"退保率百分比"
       替代口径：退保金额 / 保费收入，两者数值差异大，回答时必须说明用的是哪一种。
     meta:
       unit: 百分比
@@ -112,8 +114,10 @@ cards:
     title: 赔付率
     tags: [赔付率, 理赔, 赔付, 赔款]
     text: |
-      赔付率 = 赔付金额 / 保费收入。赔付金额取 SUM(dwd_claim.claim_amount)，
-      保费取默认的"有效保单保费收入"口径；两者都按自然月归属。
+      默认口径：当月赔付金额 / 当月保费收入，两者同一自然月、同一维度（渠道/险种）。
+      - 分子：dwd_claim.claim_date 落在该月的 SUM(claim_amount)
+      - 分母：dwd_premium_month.stat_month 落在该月、且保单 policy_status='有效' 的 SUM(premium)
+      - 结果乘以 100，保留 2 位小数，列名如"赔付率百分比"
     meta:
       unit: 百分比
       grain: 月 / 渠道 / 险种

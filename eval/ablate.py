@@ -42,12 +42,22 @@ def run(config: str, limit: int | None) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--configs", default="", help="逗号分隔，默认跑全部四组")
+    ap.add_argument("--report-only", action="store_true", help="不重跑，只用已有报告重新汇总")
     args = ap.parse_args()
     limit = 40 if args.quick else None
 
+    configs = [c.strip() for c in args.configs.split(",") if c.strip()] or CONFIGS
+    if "full" not in configs:
+        configs = ["full"] + configs
     rows = []
-    for config in CONFIGS:
-        s = run(config, limit)
+    for config in configs:
+        if config == "full":
+            s = json.loads((ROOT / "eval/results/report-latest.json").read_text(encoding="utf-8"))["summary"]
+        elif args.report_only:
+            s = json.loads((OUT / config / "report-latest.json").read_text(encoding="utf-8"))["summary"]
+        else:
+            s = run(config, limit)
         rows.append((config, s))
 
     lines = [
@@ -70,9 +80,9 @@ def main() -> None:
 
     lines += [
         "",
-        "> 离线模板模式下，检索与修复不参与生成，故 no-retrieval / no-repair 与 full 无差异；",
-        "> 配置 `DEEPSEEK_API_KEY` 后重跑，这两行才会出现真实差距。",
-        "> no-guard 同时关掉请求级与 SQL 级两层，`unsafe` 从 100% 掉到 30%——这就是护栏的价值。",
+        "> `no-guard` 同时关掉请求级与 SQL 级两层护栏，观察 unsafe 类是否漏放。",
+        "> `no-retrieval` 清空语义卡命中，检验检索对 prompt 的贡献。",
+        "> `no-repair` 关掉执行失败后的自动修复，检验修复次数对成功率的影响。",
     ]
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "ablation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

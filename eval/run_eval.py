@@ -11,7 +11,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
+import re
 import statistics
 import sys
 import time
@@ -47,15 +49,28 @@ def _num(v) -> bool:
 
 
 def _close(a, b, rel: float) -> bool:
+    """数值比较。百分比与小数是同一个数的两种写法（5.14% vs 0.0514），
+    只要一边是另一边的 100 倍就按同值处理——这是口径差异，不是算错。"""
     if a is None or b is None:
         return a is None and b is None
     if _num(a) and _num(b):
-        return abs(a - b) <= max(abs(b) * rel, ABS_TOL)
+        for x, y in ((a, b), (a * 100, b), (a, b * 100)):
+            if abs(x - y) <= max(abs(y) * rel, ABS_TOL):
+                return True
+        return False
     return str(a).strip() == str(b).strip()
 
 
 def _key(v) -> str:
-    return str(v).strip().lower() if v is not None else ""
+    """分组键归一化：DATE 与 'YYYY-MM' 是同一个月，不该因为展示格式判错。"""
+    if v is None:
+        return ""
+    if isinstance(v, (dt.date, dt.datetime)):
+        return v.strftime("%Y-%m")
+    text = str(v).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text[:7]
+    return text.lower()
 
 
 def compare(gold: list[list], pred: list[list], mode: str, rel: float) -> Outcome:
@@ -110,7 +125,8 @@ class Evaluator:
         if self.config_name == "no-retrieval":
             self.agent.retriever.search = lambda *a, **k: ([], [])
         elif self.config_name == "no-guard":
-            def _allow(sql, layer):
+            def _allow(sql, layer, scope=None):
+                # 注意签名要跟 guard.check_sql 一致（含 scope），否则消融会整轮报错
                 return guard.GuardResult(True, sql, [guard.Check("跳过校验", "pass", "ablation")], "")
             guard.check_sql = _allow
             # 请求级与 SQL 级是两层；消融要把两层一起关掉，否则测不到护栏的作用
