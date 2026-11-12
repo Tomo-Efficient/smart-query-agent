@@ -395,6 +395,7 @@
 
   function renderStopped(view) {
     stepsEl.querySelector('.step.running')?.remove();
+    if (sqlEl) sqlEl.textContent = '-- 已中断';
     view.bubble.innerHTML = '<div class="answer-head"><span class="status stopped">已停止</span></div>';
     const el = callout('clarification', '运行已中断', '你中断了这次运行，没有生成结果。重新提问即可。');
     view.bubble.appendChild(el);

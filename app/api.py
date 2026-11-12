@@ -250,4 +250,14 @@ def _run_streaming(user: auth.Principal, req: AskRequest, ip: str, events: queue
     return payload
 
 
+@app.middleware("http")
+async def no_store_static(request, call_next):
+    """前端还在改，别让浏览器缓存住旧的 app.js / style.css。"""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html")):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 app.mount("/", StaticFiles(directory=str(config.WEB_DIR), html=True), name="web")
