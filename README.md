@@ -91,6 +91,9 @@ python -m scripts.users passwd --username wang
 
 ## 它长什么样
 
+> 仓库根目录的 `index.html` 是给 GitHub Pages 用的项目说明页（`legacy-demo.html` 是早期纯前端演示存档）。
+
+
 单页控制台（`web/`），三栏：左边是对话历史与入口，中间对话，右边运行轨迹。
 
 - 左栏：新对话、最近的对话（点开即恢复当时的结论与轨迹，可删除）、语义资产入口、审计入口（仅管理员）

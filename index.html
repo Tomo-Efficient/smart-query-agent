@@ -3,747 +3,341 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>智能问数 Agent · 交互演示</title>
-<meta name="description" content="智能问数 Agent 的交互演示：根据项目复盘重建，自然语言提问、Schema 召回、SQL 生成、Query Checking 与结果展示，全部使用模拟数据。">
+<title>智能问数 Agent · 可运行的 NL2SQL</title>
+<meta name="description" content="智能问数 Agent：自然语言问数，语义层约束口径、护栏拦截危险请求、数据域限制可见范围，164 道题可复现评测。合成数据复现，代码开源。">
 <style>
   :root{
-    color-scheme: dark;
-    --bg:#08070d;
-    --bg-2:#0c0a13;
-    --panel:#100e18;
-    --panel-2:#151220;
-    --line:rgba(255,255,255,.09);
-    --line-strong:rgba(255,255,255,.16);
-    --ink:#f4f0fa;
-    --muted:#a49bb8;
-    --faint:#6f6784;
-    --accent:#b794f6;
-    --accent-strong:#8b5cf6;
-    --mint:#6ee7d8;
-    --amber:#f5c26b;
-    --red:#ff8f8f;
-    --radius:18px;
-    --mono:"SF Mono","Menlo","Consolas","Liberation Mono",monospace;
-    --ease:cubic-bezier(.16,1,.3,1);
-    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,-apple-system,sans-serif;
-    background:var(--bg);color:var(--ink);
-    -webkit-font-smoothing:antialiased;
+    --ink:#111214;
+    --ink-2:#3a3d42;
+    --muted:#666a70;
+    --faint:#8b8f95;
+    --line:#e5e5e7;
+    --line-2:#d6d6d9;
+    --bg:#ffffff;
+    --soft:#f7f7f8;
+    --focus:#1d4ed8;
+    --mono:"SF Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --max:1080px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{
-    min-width:320px;
-    background:
-      radial-gradient(900px 520px at 18% -10%,rgba(139,92,246,.20),transparent 62%),
-      radial-gradient(720px 460px at 96% 4%,rgba(110,231,216,.08),transparent 60%),
-      var(--bg);
-    color:var(--ink);line-height:1.65;
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;
   }
   a{color:inherit}
-  button{font:inherit;color:inherit}
-  ::selection{background:rgba(183,148,246,.3)}
+  ::selection{background:#111;color:#fff}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
 
-  .top{
-    position:sticky;top:0;z-index:30;
-    display:flex;align-items:center;gap:16px;
-    padding:14px clamp(16px,3vw,40px);
-    background:rgba(8,7,13,.78);
-    border-bottom:1px solid var(--line);
-    backdrop-filter:blur(14px);
+  /* ---------- 顶栏 ---------- */
+  header{border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+  .mark{
+    width:26px;height:26px;background:var(--ink);color:#fff;display:grid;place-items:center;
+    font-size:13px;font-weight:600;border-radius:2px;
   }
-  .back{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:13px;color:var(--muted);white-space:nowrap}
-  .back:hover{color:var(--ink)}
-  .crumb{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-  .top .badge{margin-left:auto}
-  .badge{
-    display:inline-flex;align-items:center;gap:7px;
-    padding:5px 11px;border:1px solid rgba(245,194,107,.35);border-radius:999px;
-    background:rgba(245,194,107,.08);color:var(--amber);
-    font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  .brand b{font-size:14px;font-weight:600;letter-spacing:.01em}
+  .bar nav{display:flex;align-items:center;gap:22px;font-size:13px;color:var(--muted)}
+  .bar nav a{text-decoration:none;padding-bottom:2px;border-bottom:1px solid transparent;transition:border-color .15s,color .15s}
+  .bar nav a:hover{color:var(--ink);border-bottom-color:var(--ink)}
+
+  /* ---------- 主视觉 ---------- */
+  .hero{padding:92px 0 64px;border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--faint);
+    text-transform:uppercase;margin-bottom:22px;
   }
-  .badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
-
-  .wrap{max-width:1280px;margin:0 auto;padding:clamp(34px,5vw,64px) clamp(16px,3vw,40px) 64px}
-
-  .intro{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:end;margin-bottom:34px}
-  .kicker{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
-  h1{font-size:clamp(34px,5vw,54px);line-height:1.05;letter-spacing:-.035em;font-weight:750}
-  .lede{max-width:640px;margin-top:14px;font-size:14.5px;color:var(--muted)}
-  .lede b{color:var(--ink);font-weight:600}
-  .intro-meta{display:flex;gap:26px;padding-bottom:6px}
-  .intro-meta div{display:grid;gap:2px}
-  .intro-meta strong{font-size:22px;font-weight:650;letter-spacing:-.02em}
-  .intro-meta span{font-size:10.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
-
-  .layout{display:grid;grid-template-columns:296px minmax(0,1fr);gap:20px;align-items:start}
-  .panel{
-    border:1px solid var(--line);border-radius:var(--radius);
-    background:linear-gradient(180deg,rgba(21,18,32,.92),rgba(16,14,24,.92));
-    padding:18px;
-    box-shadow:0 22px 60px rgba(0,0,0,.28);
+  h1{
+    font-size:clamp(30px,4.4vw,46px);line-height:1.18;letter-spacing:-.02em;font-weight:600;
+    max-width:15em;text-wrap:balance;
   }
-  .panel + .panel{margin-top:16px}
-  .panel h2{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
-    color:var(--faint);margin-bottom:12px;font-family:var(--mono);
+  .lead{margin-top:20px;max-width:38em;color:var(--ink-2);font-size:16px}
+  .lead b{font-weight:600;color:var(--ink)}
+  .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+    border:1px solid var(--ink);padding:11px 18px;font-size:13.5px;font-weight:500;
+    transition:background .15s,color .15s;
   }
-  .panel h2 em{font-style:normal;letter-spacing:0;text-transform:none;font-family:inherit;font-size:11px;color:var(--faint)}
+  .btn.primary{background:var(--ink);color:#fff}
+  .btn.primary:hover{background:#000}
+  .btn.ghost:hover{background:var(--soft)}
+  .btn .k{font-family:var(--mono);font-size:11px;opacity:.55}
 
-  .examples{display:grid;gap:8px}
-  .example{
-    display:grid;gap:3px;text-align:left;cursor:pointer;
-    padding:10px 11px;border:1px solid var(--line);border-radius:11px;
-    background:rgba(255,255,255,.02);
-    transition:border-color .18s var(--ease),background .18s var(--ease),transform .18s var(--ease);
+  /* ---------- 数字条 ---------- */
+  .facts{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+  .fact{padding:30px 0 32px;border-left:1px solid var(--line);padding-left:22px}
+  .fact:first-child{border-left:0;padding-left:0}
+  .fact .v{font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .fact .v small{font-size:15px;font-weight:500;color:var(--muted);margin-left:2px}
+  .fact .k{margin-top:8px;font-size:12.5px;color:var(--muted)}
+
+  /* ---------- 区块 ---------- */
+  section{padding:64px 0;border-bottom:1px solid var(--line)}
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:24px;margin-bottom:34px}
+  h2{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  .sec-note{font-size:12.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.04em}
+
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+  .cell{background:#fff;padding:22px 20px 24px}
+  .cell h3{font-size:14px;font-weight:600;margin-bottom:6px}
+  .cell p{font-size:13px;color:var(--muted);line-height:1.66}
+  .cell .idx{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.1em;display:block;margin-bottom:12px}
+
+  /* ---------- 截图 ---------- */
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  .shot{display:block;text-decoration:none}
+  .shot.big{grid-column:1 / -1}
+  .frame{border:1px solid var(--line-2);background:var(--soft);overflow:hidden}
+  .frame img{display:block;width:100%;height:auto}
+  .shots .shot:not(.big) .frame{
+    aspect-ratio:16/10;display:grid;place-items:center;padding:14px;
   }
-  .example:hover{border-color:rgba(183,148,246,.5);background:rgba(183,148,246,.07);transform:translateX(2px)}
-  .example b{font-size:12.5px;font-weight:600}
-  .example span{font-size:11.5px;color:var(--faint);line-height:1.45}
-
-  .schema{list-style:none;display:grid;gap:11px}
-  .schema li{display:grid;gap:2px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
-  .schema li:last-child{border-bottom:0;padding-bottom:0}
-  .schema code{font-family:var(--mono);font-size:11.5px;color:var(--mint);word-break:break-all}
-  .schema span{font-size:11px;color:var(--faint)}
-
-  .security-list{list-style:none;display:grid;gap:8px;font-size:11.5px;color:var(--muted)}
-  .security-list li{display:flex;gap:8px;align-items:flex-start}
-  .security-list svg{flex:none;margin-top:3px;color:var(--mint)}
-  .try{
-    margin-top:12px;width:100%;cursor:pointer;
-    padding:9px 11px;border-radius:9px;border:1px solid rgba(255,143,143,.28);
-    background:rgba(255,143,143,.07);color:#ffc2c2;font-size:11.5px;
+  .shots .shot:not(.big) .frame img{
+    width:auto;max-width:100%;max-height:100%;object-fit:contain;
+    border:1px solid var(--line);
   }
-  .try:hover{background:rgba(255,143,143,.13)}
+  .cap{display:flex;justify-content:space-between;gap:16px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .cap span:last-child{color:var(--faint);font-family:var(--mono);font-size:11px;white-space:nowrap}
 
-  .console{display:grid;gap:16px;min-width:0}
-  .ask{padding:16px}
-  .ask label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
-  .ask-row{display:flex;gap:10px}
-  .ask input{
-    flex:1;min-width:0;height:46px;padding:0 14px;
-    color:var(--ink);font-size:14px;
-    background:#0a0811;border:1px solid var(--line-strong);border-radius:11px;
-    outline:none;transition:border-color .18s var(--ease),box-shadow .18s var(--ease);
+  /* ---------- 本地运行 ---------- */
+  .run{display:grid;grid-template-columns:1fr 1.05fr;gap:44px;align-items:start}
+  .run p{color:var(--ink-2);font-size:14px;margin-bottom:14px}
+  .run ol{list-style:none;counter-reset:s;display:grid;gap:16px}
+  .run li{counter-increment:s;display:grid;grid-template-columns:26px 1fr;gap:12px;font-size:13.5px;color:var(--muted)}
+  .run li::before{
+    content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:11px;
+    color:var(--faint);padding-top:2px;
   }
-  .ask input::placeholder{color:var(--faint)}
-  .ask input:focus{border-color:rgba(183,148,246,.7);box-shadow:0 0 0 3px rgba(139,92,246,.16)}
-  .run{
-    flex:none;display:inline-flex;align-items:center;gap:8px;
-    height:46px;padding:0 18px;border:0;border-radius:11px;cursor:pointer;
-    background:linear-gradient(135deg,#9d7bf8,#7048e8);color:#fff;font-size:13.5px;font-weight:600;
-    box-shadow:0 10px 26px rgba(112,72,232,.28);
-    transition:filter .18s var(--ease),transform .18s var(--ease),opacity .18s var(--ease);
+  .run li .li-body{min-width:0;display:block}
+  .run li b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px;font-size:13.5px}
+  pre{
+    background:var(--ink);color:#f4f4f5;font-family:var(--mono);font-size:11.5px;line-height:1.9;
+    padding:20px 22px;border-radius:2px;
+    white-space:pre-wrap;overflow-wrap:anywhere;
   }
-  .run:hover{filter:brightness(1.08);transform:translateY(-1px)}
-  .run:disabled{opacity:.55;cursor:wait;transform:none}
-  .ask-hint{margin-top:9px;font-size:11.5px;color:var(--faint)}
-  .ask-hint code{font-family:var(--mono);color:var(--muted)}
+  pre .c{color:#8e9299}
+  pre .g{color:#9ee6b8}
+  code{font-family:var(--mono);font-size:.92em;background:var(--soft);border:1px solid var(--line);padding:1px 5px;border-radius:2px}
 
-  .pipeline{
-    display:flex;flex-wrap:wrap;gap:7px 4px;align-items:center;
-    padding:12px 14px;border:1px solid var(--line);border-radius:13px;
-    background:rgba(255,255,255,.02);
-  }
-  .step{
-    display:inline-flex;align-items:center;gap:7px;
-    padding:4px 8px;border-radius:8px;
-    font-size:11px;color:var(--faint);white-space:nowrap;
-    transition:color .2s var(--ease),background .2s var(--ease);
-  }
-  .step .dot{width:6px;height:6px;border-radius:50%;background:var(--faint);transition:background .2s,box-shadow .2s}
-  .step.active{color:var(--ink);background:rgba(183,148,246,.1)}
-  .step.active .dot{background:var(--accent);box-shadow:0 0 0 4px rgba(183,148,246,.14)}
-  .step.done{color:var(--muted)}
-  .step.done .dot{background:var(--mint)}
-  .step.error{color:#ffc2c2;background:rgba(255,143,143,.1)}
-  .step.error .dot{background:var(--red)}
-  .pipe-sep{color:var(--faint);font-size:10px;opacity:.5}
+  /* ---------- 说明框 ---------- */
+  .note{border:1px solid var(--ink);padding:24px 26px;display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start}
+  .note .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;border:1px solid var(--ink);padding:3px 8px;white-space:nowrap}
+  .note h3{font-size:14.5px;font-weight:600;margin-bottom:8px}
+  .note p{font-size:13.5px;color:var(--ink-2)}
+  .note p + p{margin-top:8px}
 
-  .result{display:grid;gap:14px;animation:rise .4s var(--ease) both}
-  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  .result-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .result-head .tag{
-    display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
-    background:rgba(110,231,216,.1);color:var(--mint);
-    font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-  }
-  .result-meta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.04em}
-  .answer{font-size:15px;color:#e9e3f3;line-height:1.75}
+  /* ---------- 页脚 ---------- */
+  footer{padding:36px 0 56px;font-size:12.5px;color:var(--muted)}
+  .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px}
+  .foot a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line-2);padding-bottom:1px}
+  .foot a:hover{color:var(--ink);border-bottom-color:var(--ink)}
 
-  .sqlcard{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:#07060c}
-  .sqlhead{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.025)}
-  .sqlhead span{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-  .sqlhead .ok{color:var(--mint)}
-  .copy{margin-left:auto;cursor:pointer;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);font-size:10.5px;padding:4px 8px}
-  .copy:hover{color:var(--ink);border-color:var(--line-strong)}
-  pre.sql{margin:0;padding:14px;overflow:auto;max-height:none;font-family:var(--mono);font-size:11.5px;line-height:1.72;color:#cfc6e2;tab-size:2}
-  .sql .kw{color:#c4a5ff}
-  .sql .fn{color:#6ee7d8}
-  .sql .str{color:#f5c26b}
-  .sql .num{color:#ffb3c7}
-
-  .grid2{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:14px}
-  .card{border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.018);overflow:hidden}
-  .card-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-  .card-head em{margin-left:auto;font-style:normal;letter-spacing:0;text-transform:none;font-family:inherit;font-size:10.5px;color:var(--faint)}
-  .tablewrap{overflow:auto}
-  table{width:100%;border-collapse:collapse;font-size:12px;min-width:340px}
-  th,td{padding:9px 12px;text-align:left;white-space:nowrap}
-  th{font-weight:500;color:var(--faint);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--line)}
-  td{border-bottom:1px solid rgba(255,255,255,.05);color:#e7e1f1}
-  tr:last-child td{border-bottom:0}
-  td:not(:first-child),th:not(:first-child){text-align:right;font-family:var(--mono);font-size:11.5px}
-
-  .chart{padding:14px 12px 16px;display:grid;gap:9px}
-  .bar{display:grid;grid-template-columns:78px minmax(0,1fr) 64px;gap:9px;align-items:center;font-size:11px}
-  .bar > span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bar .track{height:6px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
-  .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,rgba(183,148,246,.65),var(--accent));transition:width .6s var(--ease)}
-  .bar b{text-align:right;font-family:var(--mono);font-weight:500;font-size:10.5px;color:var(--ink)}
-
-  .checks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .check{display:flex;gap:9px;padding:10px 11px;border:1px solid var(--line);border-radius:11px;background:rgba(110,231,216,.03)}
-  .check svg{flex:none;color:var(--mint);margin-top:2px}
-  .check strong{display:block;font-size:11.5px;font-weight:600}
-  .check small{display:block;font-size:10.5px;color:var(--faint);line-height:1.45}
-
-  .evidence{padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.015)}
-  .evidence h3{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
-  .evidence ul{list-style:none;display:grid;gap:5px}
-  .evidence li{position:relative;padding-left:13px;font-size:11.5px;color:var(--muted);line-height:1.55}
-  .evidence li::before{content:"";position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:var(--accent);opacity:.8}
-
-  .blocked{padding:20px;border:1px solid rgba(255,143,143,.35);border-radius:16px;background:rgba(255,143,143,.06)}
-  .blocked .bhead{display:flex;align-items:center;gap:10px;color:#ffd0d0;font-weight:650;font-size:15px}
-  .blocked p{margin-top:8px;font-size:13px;color:#f0c9c9}
-  .blocked ul{list-style:none;display:grid;gap:6px;margin-top:12px;font-size:11.5px;color:#d8b8b8}
-  .blocked li{display:flex;gap:8px}
-  .blocked li::before{content:"—";color:var(--red)}
-
-  .empty{padding:22px;border:1px dashed var(--line-strong);border-radius:16px;background:rgba(255,255,255,.015)}
-  .empty strong{display:block;font-size:14px}
-  .empty p{margin-top:7px;font-size:12.5px;color:var(--muted)}
-  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-  .chip{cursor:pointer;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:11px}
-  .chip:hover{border-color:var(--accent);color:var(--ink)}
-
-  footer{border-top:1px solid var(--line);padding:22px clamp(16px,3vw,40px);color:var(--faint);font-size:11px}
-  footer .foot{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
-  footer a{color:var(--muted);text-decoration:none}
-  footer a:hover{color:var(--ink)}
-
-  @media (max-width:980px){
-    .layout{grid-template-columns:1fr}
-    pre.sql{max-height:300px}
-    .console{order:1}
-    aside{order:2;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-    aside .panel + .panel{margin-top:0}
-    .intro{grid-template-columns:1fr}
-    .intro-meta{padding-bottom:0}
-    .grid2{grid-template-columns:1fr}
-  }
-  @media (max-width:640px){
-    .wrap{padding-top:28px}
-    aside{grid-template-columns:1fr}
-    .ask-row{flex-direction:column}
-    .run{justify-content:center;width:100%}
-    .checks{grid-template-columns:1fr}
-    .intro-meta{gap:18px;flex-wrap:wrap}
-    .result-meta{margin-left:0;width:100%}
-    .bar{grid-template-columns:64px minmax(0,1fr) 54px}
-    .crumb{display:none}
+  @media (max-width:860px){
+    .hero{padding:64px 0 48px}
+    h1{font-size:27px}
+    .sec-head{flex-direction:column;gap:6px;margin-bottom:24px}
+    .facts{grid-template-columns:1fr 1fr}
+    .fact{border-left:0;border-top:1px solid var(--line);padding:22px 0}
+    .fact:nth-child(-n+2){border-top:0}
+    .fact:nth-child(even){padding-left:20px;border-left:1px solid var(--line)}
+    .grid-3{grid-template-columns:1fr}
+    .shots{grid-template-columns:1fr}
+    .run{grid-template-columns:1fr;gap:26px}
+    section{padding:48px 0}
+    .bar nav{gap:14px}
+    .bar nav a.hide-sm{display:none}
   }
   @media (prefers-reduced-motion:reduce){
-    *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+    html{scroll-behavior:auto}
+    *{transition:none !important}
   }
 </style>
 </head>
 <body>
-<div style="background:#0f172a;color:#e2e8f0;font:13px/1.6 -apple-system,'PingFang SC',sans-serif;padding:10px 16px;text-align:center">
-  这是早期静态演示：问答与结果都是写死的，用来讲交互。真实版本（可跑、可评测）在
-  <a href="https://github.com/Tomo-Efficient/smart-query-agent" style="color:#5eead4">GitHub 仓库</a>，
-  本地 <code style="background:#1e293b;padding:1px 6px;border-radius:4px">make serve</code> 启动。
-</div>
-<header class="top">
-  <a class="back" href="https://tomo-efficient.github.io/resume/">← 石浩田</a>
-  <span class="crumb">项目 / 智能问数 Agent / 交互演示</span>
-  <span class="badge">模拟数据</span>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="./">
+      <span class="mark">问</span>
+      <b>智能问数 Agent</b>
+    </a>
+    <nav>
+      <a href="#what" class="hide-sm">做了什么</a>
+      <a href="#shots" class="hide-sm">界面</a>
+      <a href="#run">本地运行</a>
+      <a href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+  </div>
 </header>
 
-<main class="wrap">
-  <section class="intro">
-    <div>
-      <p class="kicker">NL2SQL · DATA AGENT</p>
-      <h1>问数控制台</h1>
-      <p class="lede">用自然语言提问，系统完成 <b>Schema 召回 → SQL 生成 → 校验 → 执行 → 总结</b>。这是根据项目复盘重建的交互演示，数据和指标全部为模拟。</p>
+<main>
+  <div class="wrap">
+    <div class="hero">
+      <div class="eyebrow">NL2SQL · 数据产品 · 2026</div>
+      <h1>用一句话，<br>问清楚经营数据。</h1>
+      <p class="lead">
+        业务人员用自然语言提问，系统先检索语义证据、再生成 SQL、经<b>三层校验</b>后执行，
+        返回<b>结论、指标、图与表</b>，并给出可展开的 SQL 与校验项。数据域决定你能看什么，每一次提问都留痕。
+      </p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">
+          查看源码 <span class="k">GitHub</span>
+        </a>
+        <a class="btn ghost" href="#run">
+          本地跑起来 <span class="k">make serve</span>
+        </a>
+      </div>
     </div>
-    <div class="intro-meta">
-      <div><strong>1.8s</strong><span>P50 延迟</span></div>
-      <div><strong>2</strong><span>关联表</span></div>
-      <div><strong>14</strong><span>召回字段</span></div>
+  </div>
+
+  <div class="wrap">
+    <div class="facts">
+      <div class="fact">
+        <div class="v">90.9<small>%</small></div>
+        <div class="k">在线评测准确率（149 / 164）</div>
+      </div>
+      <div class="fact">
+        <div class="v">3.1<small>s</small></div>
+        <div class="k">端到端 P50（P90 3.9s）</div>
+      </div>
+      <div class="fact">
+        <div class="v">47</div>
+        <div class="k">测试全绿（含租户隔离）</div>
+      </div>
+      <div class="fact">
+        <div class="v">10<small>/10</small></div>
+        <div class="k">危险请求拦截</div>
+      </div>
+    </div>
+  </div>
+
+  <section id="what">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>它做了什么</h2>
+        <div class="sec-note">合成保险数仓 · 11 表 · 4 万保单 · 57 万行保费</div>
+      </div>
+      <div class="grid-3">
+        <div class="cell">
+          <span class="idx">01 / 语义层</span>
+          <h3>33 张语义卡约束口径</h3>
+          <p>指标、表、关系、术语四类卡片参与检索，把"保费到底含不含退保"写进 Prompt，而不是靠模型猜。</p>
+        </div>
+        <div class="cell">
+          <span class="idx">02 / 护栏</span>
+          <h3>请求级 + SQL 级双层</h3>
+          <p>生成前拦截危险意图，生成后做 AST 校验：单语句、只读、表白名单、敏感字段、自动 LIMIT。</p>
+        </div>
+        <div class="cell">
+          <span class="idx">03 / 权限</span>
+          <h3>数据域在引擎层收口</h3>
+          <p>账号绑定渠道范围，校验阶段把受控表改写成带过滤的子查询——越权的行根本查不到，不靠模型自觉。</p>
+        </div>
+        <div class="cell">
+          <span class="idx">04 / 交互</span>
+          <h3>结果优先，过程可查</h3>
+          <p>结论、指标、图/表切换；右侧轨迹逐步给出耗时、召回证据、SQL 与校验项，回答可复制、可重跑。</p>
+        </div>
+        <div class="cell">
+          <span class="idx">05 / 运营</span>
+          <h3>审计、配额与多轮</h3>
+          <p>每次提问留痕（谁、问了什么、什么 SQL、几行、多少毫秒）；追问会显式改写问题，不静默继承条件。</p>
+        </div>
+        <div class="cell">
+          <span class="idx">06 / 评测</span>
+          <h3>164 题 + 四组消融</h3>
+          <p>gold SQL 现场复算，分类准确率、失败归因、消融表与成本全部写进报告，一条命令重跑。</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <div class="layout">
-    <aside>
-      <section class="panel">
-        <h2>可以问什么 <em>5 组</em></h2>
-        <div class="examples" id="examples"></div>
-      </section>
+  <section id="shots">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>界面</h2>
+        <div class="sec-note">真实后端 · DeepSeek 在线</div>
+      </div>
+      <div class="shots">
+        <a class="shot big" href="docs/console.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/console.png" alt="控制台：左侧对话历史，中间结论与图表，右侧运行轨迹" loading="lazy"></div>
+          <div class="cap"><span>控制台：对话历史 · 结论与图表 · 运行轨迹</span><span>1440 × 1100</span></div>
+        </a>
+        <a class="shot" href="docs/scope.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/scope.png" alt="数据域生效：同一问题只返回账号有权限的渠道" loading="lazy"></div>
+          <div class="cap"><span>数据域生效：只返回有权限的渠道</span><span>scope</span></div>
+        </a>
+        <a class="shot" href="docs/login.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/login-card.png" alt="工号登录页" loading="lazy"></div>
+          <div class="cap"><span>工号登录：账号决定数据域</span><span>login</span></div>
+        </a>
+      </div>
+    </div>
+  </section>
 
-      <section class="panel">
-        <h2>数据表 <em>模拟</em></h2>
-        <ul class="schema">
-          <li><code>dws_policy_premium_di</code><span>保单保费明细 · 8 字段</span></li>
-          <li><code>dim_channel</code><span>渠道维表 · 4 字段</span></li>
-          <li><code>dim_risk</code><span>险种维表 · 4 字段</span></li>
-          <li><code>dim_agent</code><span>代理人维表 · 5 字段</span></li>
-        </ul>
-      </section>
-
-      <section class="panel">
-        <h2>安全策略</h2>
-        <ul class="security-list">
-          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/></svg><span>只读账号，无写权限</span></li>
-          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/></svg><span>AST 拦截 DROP / DELETE</span></li>
-          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/></svg><span>自动补 LIMIT 100</span></li>
-          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/></svg><span>敏感字段脱敏</span></li>
-        </ul>
-        <button class="try" id="tryBlocked" type="button">试试写操作，看拦截效果</button>
-      </section>
-    </aside>
-
-    <section class="console">
-      <div class="panel ask">
-        <label for="q">用一句话提问</label>
-        <div class="ask-row">
-          <input id="q" type="text" autocomplete="off" placeholder="例如：上个月各渠道的保费收入环比" aria-label="输入问题">
-          <button class="run" id="run" type="button">
-            运行
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
-          </button>
+  <section id="run">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>本地跑起来</h2>
+        <div class="sec-note">Python 3.11+ · macOS / Linux</div>
+      </div>
+      <div class="run">
+        <div>
+          <p>不需要模型 Key 也能跑：没配 Key 时走离线模板基线，链路、护栏、数据域、审计都完整，只是不能任意改写问法。</p>
+          <ol>
+            <li><span class="li-body"><b>克隆与安装</b>生成虚拟环境、装依赖。</span></li>
+            <li><span class="li-body"><b>生成数据</b>合成数仓约 2 秒，写入 <code>data/warehouse.duckdb</code>。</span></li>
+            <li><span class="li-body"><b>启动</b>打开 <code>127.0.0.1:8000</code>，用登录页的演示账号进入。</span></li>
+            <li><span class="li-body"><b>接真模型（可选）</b>把 <code>DEEPSEEK_API_KEY</code> 写进 <code>.env</code>，顶栏会从"离线演示"变成"在线"。</span></li>
+          </ol>
         </div>
-        <p class="ask-hint">按 Enter 运行 · 当前只支持左侧 5 组预置问题，其余会提示未命中。</p>
-      </div>
+        <pre><span class="c"># 1. 克隆与安装</span>
+git clone https://github.com/Tomo-Efficient/smart-query-agent.git
+cd smart-query-agent
+make setup
 
-      <div class="pipeline" id="pipeline" aria-label="处理流程">
-        <span class="step" data-step="0"><i class="dot"></i>理解问题</span><span class="pipe-sep">/</span>
-        <span class="step" data-step="1"><i class="dot"></i>Schema 召回</span><span class="pipe-sep">/</span>
-        <span class="step" data-step="2"><i class="dot"></i>生成 SQL</span><span class="pipe-sep">/</span>
-        <span class="step" data-step="3"><i class="dot"></i>Query Checking</span><span class="pipe-sep">/</span>
-        <span class="step" data-step="4"><i class="dot"></i>执行</span><span class="pipe-sep">/</span>
-        <span class="step" data-step="5"><i class="dot"></i>总结</span>
-      </div>
+<span class="c"># 2. 生成合成数仓（约 2 秒）</span>
+make data
 
-      <div id="output" aria-live="polite"></div>
-    </section>
-  </div>
+<span class="c"># 3. 启动</span>
+make serve
+<span class="g"># → http://127.0.0.1:8000</span>
+
+<span class="c"># 4. 跑评测（可选）</span>
+make eval</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="note">
+        <div class="tag">为什么没有在线 Demo</div>
+        <div>
+          <h3>它需要一个能跑 Python 的后端，而 GitHub Pages 只能托管静态文件</h3>
+          <p>真版本要连 DuckDB、调模型、做 AST 校验和数据域注入，这些都发生在服务端。所以这里给的是截图与源码，不是可以点的按钮。</p>
+          <p>想现场看，克隆下来 <code>make serve</code> 即可；早期那版纯前端演示保留在 <a href="legacy-demo.html">legacy-demo.html</a>，用模拟数据，可以点但不会真的查库。</p>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer>
-  <div class="foot">
-    <span>模拟数据，不代表招商金科真实业务数据。仅用于展示问数链路与交互。</span>
-    <span><a href="https://tomo-efficient.github.io/resume/#projects">← 返回项目</a> · <a href="https://tomo-efficient.github.io/resume/">石浩田</a></span>
+  <div class="wrap foot">
+    <div>合成数据复现，数字与生产环境（85%+）分开口径，不混着说。</div>
+    <div>
+      <a href="https://tomo-efficient.github.io/ai-product-portfolio/" target="_blank" rel="noopener">作品集</a>
+      &nbsp;·&nbsp;
+      <a href="legacy-demo.html">早期静态演示</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">GitHub</a>
+    </div>
   </div>
 </footer>
 
-<script>
-const DEMO = [
-  {
-    id: "q1",
-    label: "渠道保费环比",
-    question: "上个月各渠道的保费收入环比",
-    complexity: "中等",
-    latency: "1.8s",
-    tables: 2,
-    fields: 14,
-    answer: "上个月全渠道保费收入 3.12 亿元，环比 +5.8%。互联网渠道增速最快（+21.6%），银保渠道小幅下滑（-2.1%）；个险代理人仍是最大来源。",
-    sql: `WITH cur AS (
-  SELECT channel_code, SUM(premium) AS premium
-  FROM dws_policy_premium_di
-  WHERE stat_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-    AND stat_date <  DATE_TRUNC('month', CURRENT_DATE)
-    AND policy_status = '有效'
-  GROUP BY channel_code
-), prev AS (
-  SELECT channel_code, SUM(premium) AS premium
-  FROM dws_policy_premium_di
-  WHERE stat_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '2 month')
-    AND stat_date <  DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-    AND policy_status = '有效'
-  GROUP BY channel_code
-)
-SELECT c.channel_name,
-       ROUND(cur.premium / 10000, 1) AS premium_wan,
-       ROUND((cur.premium / NULLIF(prev.premium, 0) - 1) * 100, 1) AS mom_pct
-FROM cur
-JOIN prev USING (channel_code)
-JOIN dim_channel c USING (channel_code)
-ORDER BY premium_wan DESC
-LIMIT 100;`,
-    columns: ["渠道", "保费收入（万元）", "环比"],
-    rows: [
-      ["个险代理人", "12,840.0", "+8.4%"],
-      ["银保渠道", "9,620.0", "-2.1%"],
-      ["互联网", "5,480.0", "+21.6%"],
-      ["经纪代理", "3,260.0", "+3.2%"]
-    ],
-    chart: { type: "value", index: 1, label: "保费（万元）" },
-    checks: [
-      ["只读账号", "使用 analytics_ro"],
-      ["AST 校验", "无写操作，无全表扫描"],
-      ["自动 LIMIT", "已补 LIMIT 100"],
-      ["口径命中", "保费收入 / 有效保单 / 环比"]
-    ],
-    evidence: [
-      "指标平台：保费收入 = SUM(premium)，剔除退保与失效保单",
-      "同义词：保费收入 / 已赚保费 / premium_income",
-      "口径：环比 = 本月 / 上月 - 1，按自然月统计",
-      "表语义：dws_policy_premium_di 按 stat_date 分区，channel_code 关联 dim_channel"
-    ]
-  },
-  {
-    id: "q2",
-    label: "互联网退保率",
-    question: "上季度互联网渠道的退保率是多少",
-    complexity: "简单",
-    latency: "1.4s",
-    tables: 2,
-    fields: 8,
-    answer: "上季度互联网渠道退保率为 4.7%，高于全渠道均值 3.9%。主要集中在投保后 30 天内，建议进一步拆分产品与首期保费区间。",
-    sql: `SELECT
-  ROUND(SUM(CASE WHEN policy_status = '退保' THEN 1 ELSE 0 END)::numeric
-        / COUNT(*), 4) AS surrender_rate,
-  COUNT(*) AS policy_cnt
-FROM dws_policy_premium_di p
-JOIN dim_channel c USING (channel_code)
-WHERE c.channel_name = '互联网'
-  AND p.stat_date >= DATE_TRUNC('quarter', CURRENT_DATE - INTERVAL '1 quarter')
-  AND p.stat_date <  DATE_TRUNC('quarter', CURRENT_DATE)
-LIMIT 100;`,
-    columns: ["退保率", "保单件数"],
-    rows: [["4.7%", "18,420"]],
-    chart: null,
-    checks: [
-      ["只读账号", "使用 analytics_ro"],
-      ["AST 校验", "无写操作"],
-      ["自动 LIMIT", "已补 LIMIT 100"],
-      ["口径命中", "退保率 = 退保件数 / 总件数"]
-    ],
-    evidence: [
-      "指标平台：退保率 = 退保件数 / 承保件数，按保单口径去重",
-      "字段语义：policy_status 枚举包含 有效 / 失效 / 退保",
-      "时间口径：季度按自然季度，stat_date 为保单生效日"
-    ]
-  },
-  {
-    id: "q3",
-    label: "件均保费",
-    question: "近 7 天各险种的件均保费",
-    complexity: "简单",
-    latency: "1.2s",
-    tables: 2,
-    fields: 11,
-    answer: "近 7 天件均保费最高的是重疾险（8,420 元），其次为年金险（6,150 元）。医疗险件均 1,980 元，但件数最多，适合作为交叉销售入口。",
-    sql: `SELECT
-  risk_name,
-  ROUND(SUM(premium)::numeric / COUNT(DISTINCT policy_no), 0) AS avg_premium,
-  COUNT(DISTINCT policy_no) AS policy_cnt
-FROM dws_policy_premium_di p
-JOIN dim_risk r USING (risk_code)
-WHERE p.stat_date >= CURRENT_DATE - INTERVAL '7 day'
-  AND p.policy_status = '有效'
-GROUP BY risk_name
-ORDER BY avg_premium DESC
-LIMIT 100;`,
-    columns: ["险种", "件均保费（元）", "件数"],
-    rows: [
-      ["重疾险", "8,420", "1,260"],
-      ["年金险", "6,150", "840"],
-      ["医疗险", "1,980", "3,420"]
-    ],
-    chart: { type: "value", index: 1, label: "件均（元）" },
-    checks: [
-      ["只读账号", "使用 analytics_ro"],
-      ["AST 校验", "无写操作"],
-      ["自动 LIMIT", "已补 LIMIT 100"],
-      ["口径命中", "件均 = 保费 / 保单件数"]
-    ],
-    evidence: [
-      "指标平台：件均保费 = SUM(premium) / COUNT(DISTINCT policy_no)",
-      "维度：risk_code 关联 dim_risk，险种名称取自维表",
-      "过滤：仅统计有效保单，排除退保与失效"
-    ]
-  },
-  {
-    id: "q4",
-    label: "渠道件均",
-    question: "近 30 天各渠道的件均保费",
-    complexity: "中等",
-    latency: "1.6s",
-    tables: 2,
-    fields: 12,
-    answer: "个险代理人的件均保费最高（6,480 元），互联网最低（1,860 元），但互联网件数最多（9,640 件）。渠道策略上，互联网适合走量，个险适合做高价值产品。",
-    sql: `SELECT c.channel_name,
-       ROUND(SUM(p.premium)::numeric / COUNT(DISTINCT p.policy_no), 0) AS avg_premium,
-       COUNT(DISTINCT p.policy_no) AS policy_cnt
-FROM dws_policy_premium_di p
-JOIN dim_channel c USING (channel_code)
-WHERE p.stat_date >= CURRENT_DATE - INTERVAL '30 day'
-  AND p.policy_status = '有效'
-GROUP BY c.channel_name
-ORDER BY avg_premium DESC
-LIMIT 100;`,
-    columns: ["渠道", "件均保费（元）", "件数"],
-    rows: [
-      ["个险代理人", "6,480", "8,420"],
-      ["银保渠道", "5,120", "6,180"],
-      ["经纪代理", "4,260", "2,310"],
-      ["互联网", "1,860", "9,640"]
-    ],
-    chart: { type: "value", index: 1, label: "件均（元）" },
-    checks: [
-      ["只读账号", "使用 analytics_ro"],
-      ["AST 校验", "无写操作"],
-      ["自动 LIMIT", "已补 LIMIT 100"],
-      ["口径命中", "件均 / 保单件数 / 有效保单"]
-    ],
-    evidence: [
-      "指标平台：件均保费 = 保费收入 / 保单件数",
-      "渠道口径：channel_name 来自 dim_channel，与保费明细一对多关联",
-      "时间口径：近 30 天按自然日滚动，含当天"
-    ]
-  },
-  {
-    id: "q5",
-    label: "险种保费占比",
-    question: "本月各险种的保费收入占比",
-    complexity: "中等",
-    latency: "1.7s",
-    tables: 2,
-    fields: 10,
-    answer: "本月重疾险保费占比最高（42.6%），年金险次之（28.4%），两者合计 71%。医疗险件数多但件均低，保费占比 18.2%。",
-    sql: `WITH cur AS (
-  SELECT risk_code, SUM(premium) AS premium
-  FROM dws_policy_premium_di
-  WHERE stat_date >= DATE_TRUNC('month', CURRENT_DATE)
-    AND stat_date <  DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
-    AND policy_status = '有效'
-  GROUP BY risk_code
-)
-SELECT r.risk_name,
-       ROUND(cur.premium / 10000, 1) AS premium_wan,
-       ROUND(cur.premium / SUM(cur.premium) OVER () * 100, 1) AS share_pct
-FROM cur
-JOIN dim_risk r USING (risk_code)
-ORDER BY share_pct DESC
-LIMIT 100;`,
-    columns: ["险种", "保费收入（万元）", "占比"],
-    rows: [
-      ["重疾险", "13,290.0", "42.6%"],
-      ["年金险", "8,860.0", "28.4%"],
-      ["医疗险", "5,680.0", "18.2%"],
-      ["意外险", "3,370.0", "10.8%"]
-    ],
-    chart: { type: "percent", index: 2, label: "占比" },
-    checks: [
-      ["只读账号", "使用 analytics_ro"],
-      ["AST 校验", "无写操作"],
-      ["自动 LIMIT", "已补 LIMIT 100"],
-      ["口径命中", "保费 / 险种 / 占比"]
-    ],
-    evidence: [
-      "指标平台：保费收入 = SUM(premium)，仅统计有效保单",
-      "占比：险种保费 / 当月总保费，窗口函数一次计算",
-      "维度：risk_code 关联 dim_risk，险种名称取自维表"
-    ]
-  }
-];
-
-const $ = (s, el = document) => el.querySelector(s);
-const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-function highlight(sql) {
-  const strings = [];
-  let out = esc(sql).replace(/&#39;([\s\S]*?)&#39;/g, (m, inner) => {
-    strings.push("'" + inner.replace(/&#39;/g, "'") + "'");
-    return "__S" + (strings.length - 1) + "__";
-  });
-  out = out.replace(/\b(SELECT|FROM|WHERE|AND|OR|GROUP BY|ORDER BY|LIMIT|JOIN|LEFT JOIN|WITH|AS|ON|USING|DISTINCT|CASE|WHEN|THEN|ELSE|END|DESC|ASC|OVER|PARTITION BY|INTERVAL)\b/g, '<span class="kw">$1</span>');
-  out = out.replace(/\b(SUM|ROUND|COUNT|DATE_TRUNC|NULLIF|CURRENT_DATE)\b/g, '<span class="fn">$1</span>');
-  out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="num">$1</span>');
-  out = out.replace(/__S(\d+)__/g, (m, i) => '<span class="str">' + esc(strings[Number(i)]) + '</span>');
-  return out;
-}
-
-function shield() {
-  return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>';
-}
-
-function renderExamples() {
-  $("#examples").innerHTML = DEMO.map((d) => `
-    <button class="example" type="button" data-q="${esc(d.question)}">
-      <b>${esc(d.label)}</b>
-      <span>${esc(d.question)}</span>
-    </button>`).join("");
-}
-
-function route(text) {
-  const t = text.replace(/\s+/g, "");
-  if (/退保/.test(t)) return DEMO[1];
-  if (/件均/.test(t) && /渠道|代理|银保|互联网|经纪/.test(t)) return DEMO[3];
-  if (/件均/.test(t)) return DEMO[2];
-  if (/占比|比例|结构/.test(t)) return DEMO[4];
-  if (/环比|增长|变化/.test(t) && /保费|收入/.test(t)) return DEMO[0];
-  if (/保费/.test(t) && /渠道/.test(t)) return DEMO[0];
-  return null;
-}
-
-function isDangerous(text) {
-  return /(delete|drop|truncate|update|insert|alter|grant|revoke|删除|清空|更新|插入|改表|删表)/i.test(text);
-}
-
-function resetPipeline() {
-  $$(".step").forEach((s) => { s.classList.remove("active", "done", "error"); });
-}
-
-async function runPipeline(count, token) {
-  resetPipeline();
-  const steps = $$(".step");
-  for (let i = 0; i < count; i++) {
-    if (token !== seq) return false;
-    steps[i].classList.add("active");
-    await wait(reduce ? 0 : 230);
-    if (token !== seq) return false;
-    steps[i].classList.remove("active");
-    steps[i].classList.add("done");
-  }
-  return true;
-}
-
-function tableHTML(hit) {
-  return `<div class="tablewrap"><table>
-    <thead><tr>${hit.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
-    <tbody>${hit.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>
-  </table></div>`;
-}
-
-function chartHTML(hit) {
-  if (!hit.chart) return "";
-  const { index, label, type } = hit.chart;
-  const vals = hit.rows.map((r) => {
-    const raw = r[index];
-    return type === "percent" ? parseFloat(raw) : parseFloat(String(raw).replace(/,/g, ""));
-  });
-  const max = Math.max(...vals) || 1;
-  return `<div class="card">
-    <div class="card-head">结果分布 <em>${esc(label)}</em></div>
-    <div class="chart">${hit.rows.map((r, i) => `
-      <div class="bar"><span>${esc(r[0])}</span><div class="track"><i style="width:${Math.max(6, vals[i] / max * 100).toFixed(1)}%"></i></div><b>${esc(r[index])}</b></div>`).join("")}</div>
-  </div>`;
-}
-
-function renderHit(hit) {
-  const checks = hit.checks.map(([k, v]) => `<div class="check">${shield()}<div><strong>${esc(k)}</strong><small>${esc(v)}</small></div></div>`).join("");
-  const evidence = hit.evidence.map((e) => `<li>${esc(e)}</li>`).join("");
-  $("#output").innerHTML = `<div class="result">
-    <div class="result-head">
-      <span class="tag">回答</span>
-      <span class="result-meta">${esc(hit.latency)} · ${hit.tables} 张表 · ${hit.fields} 字段 · ${esc(hit.complexity)}</span>
-    </div>
-    <p class="answer">${esc(hit.answer)}</p>
-    <div class="sqlcard">
-      <div class="sqlhead"><span>SQL · <b class="ok">Query Checking 通过</b></span><button class="copy" type="button" data-copy>复制</button></div>
-      <pre class="sql"><code>${highlight(hit.sql)}</code></pre>
-    </div>
-    <div class="grid2">
-      <div class="card"><div class="card-head">查询结果 <em>模拟数据 · 已脱敏</em></div>${tableHTML(hit)}</div>
-      ${chartHTML(hit) || `<div class="card"><div class="card-head">说明 <em>单指标</em></div><div class="chart"><p style="font-size:12px;color:var(--muted);line-height:1.7">该问题返回单个汇总指标，不生成分布图。换一个“按渠道 / 险种拆分”的问题可以看到分布。</p></div></div>`}
-    </div>
-    <div class="checks">${checks}</div>
-    <div class="evidence"><h3>检索依据</h3><ul>${evidence}</ul></div>
-  </div>`;
-  $$("#output .copy").forEach((b) => b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(hit.sql); b.textContent = "已复制"; setTimeout(() => b.textContent = "复制", 1400); } catch { b.textContent = "复制失败"; }
-  }));
-}
-
-function renderBlocked(text) {
-  $("#output").innerHTML = `<div class="blocked">
-    <div class="bhead">${shield()} 已拦截：写操作</div>
-    <p>“${esc(text)}” 包含写操作意图。演示环境只允许 SELECT，SQL 在 AST 校验阶段被拒绝，没有下发到数据库。</p>
-    <ul>
-      <li>AST 解析：检测到 DELETE / DROP 类语句</li>
-      <li>账号权限：analytics_ro 只有只读权限</li>
-      <li>建议：把问题改成“查询 / 统计 / 对比”的问法</li>
-    </ul>
-  </div>`;
-}
-
-function renderEmpty(text) {
-  $("#output").innerHTML = `<div class="empty">
-    <strong>没有命中已配置的问题</strong>
-    <p>“${esc(text)}” 不在当前演示的 5 组问题里。这个 Demo 用预置问题和 SQL 展示链路，不调用真实模型。</p>
-    <div class="chips">${DEMO.slice(0, 3).map((d) => `<button class="chip" type="button" data-q="${esc(d.question)}">${esc(d.label)}</button>`).join("")}</div>
-  </div>`;
-  $$("#output .chip").forEach((b) => b.addEventListener("click", () => { $("#q").value = b.dataset.q; run(); }));
-}
-
-let seq = 0;
-async function run(text) {
-  const q = (text ?? $("#q").value).trim();
-  if (!q) { $("#q").focus(); return; }
-  const token = ++seq;
-  $("#run").disabled = true;
-  $("#run").firstChild.textContent = "运行中 ";
-  $("#output").innerHTML = "";
-  const danger = isDangerous(q);
-  const hit = danger ? null : route(q);
-  $(".intro-meta").innerHTML = '<div><strong>—</strong><span>本次耗时</span></div><div><strong>—</strong><span>关联表</span></div><div><strong>—</strong><span>召回字段</span></div>';
-  if (!hit && !danger) {
-    await runPipeline(2, token);
-    if (token !== seq) return;
-    $("#run").disabled = false;
-    $("#run").firstChild.textContent = "运行 ";
-    renderEmpty(q);
-    return;
-  }
-  const ok = await runPipeline(danger ? 4 : 6, token);
-  if (!ok || token !== seq) return;
-  if (danger) {
-    $$(".step")[3].classList.remove("done");
-    $$(".step")[3].classList.add("error");
-    renderBlocked(q);
-  } else {
-    renderHit(hit);
-    $(".intro-meta").innerHTML = `<div><strong>${esc(hit.latency)}</strong><span>本次耗时</span></div><div><strong>${hit.tables}</strong><span>关联表</span></div><div><strong>${hit.fields}</strong><span>召回字段</span></div>`;
-  }
-  $("#run").disabled = false;
-  $("#run").firstChild.textContent = "运行 ";
-}
-
-renderExamples();
-$("#run").addEventListener("click", () => run());
-$("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-$("#examples").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-q]");
-  if (!b) return;
-  $("#q").value = b.dataset.q;
-  run();
-});
-$("#tryBlocked").addEventListener("click", () => {
-  $("#q").value = "删除上个月的保单数据";
-  run();
-});
-setTimeout(() => run(DEMO[0].question), reduce ? 0 : 500);
-</script>
 </body>
 </html>
