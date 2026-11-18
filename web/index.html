@@ -44,10 +44,14 @@
 
   <main class="layout">
   <section class="chat">
-    <div class="thread" id="thread">
+    <div class="thread" id="thread" aria-busy="false">
       <div class="thread-inner">
         <div class="intro" id="intro">
           <h1>用一句话，问清楚经营数据</h1>
+          <div class="recent" id="recent" hidden>
+            <span class="recent-label">最近问过</span>
+            <div class="recent-list" id="recent-list"></div>
+          </div>
           <div class="suggest" id="suggest"></div>
         </div>
       </div>
@@ -55,7 +59,7 @@
 
     <div class="composer-wrap">
       <div class="run-status" id="run-status" hidden>
-        <span class="rs-dot"></span><span id="run-status-text">运行中</span>
+        <span class="rs-dot"></span><span id="run-status-text" role="status" aria-live="polite">运行中</span>
         <button type="button" class="link-btn" id="stop-run">停止 <kbd>Esc</kbd></button>
       </div>
       <form class="composer" id="composer">
@@ -106,7 +110,7 @@
 </div>
 
 <div class="drawer-backdrop" id="backdrop"></div>
-<aside class="drawer" id="drawer" aria-label="语义资产">
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="语义资产" aria-hidden="true">
   <div class="drawer-head">
     <h2>语义资产</h2>
     <button class="ghost-btn" id="close-drawer">关闭</button>
@@ -114,7 +118,7 @@
   <div class="drawer-body" id="drawer-body"></div>
 </aside>
 
-<aside class="drawer" id="audit-drawer" aria-label="审计日志">
+<aside class="drawer" id="audit-drawer" role="dialog" aria-modal="true" aria-label="审计日志" aria-hidden="true">
   <div class="drawer-head">
     <h2>审计日志</h2>
     <button class="ghost-btn" id="close-audit">关闭</button>
@@ -123,6 +127,7 @@
 </aside>
 
 <div class="toast" id="toast"></div>
+<script src="chart.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

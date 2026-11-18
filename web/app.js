@@ -196,12 +196,40 @@
     });
   }
 
+  function renderRecent(items) {
+    const box = $('#recent');
+    const list = $('#recent-list');
+    if (!box || !list) return;
+    const seen = new Set();
+    const picks = [];
+    (items || []).forEach((it) => {
+      const t = (it.title || '').trim();
+      if (!t || seen.has(t)) return;
+      seen.add(t);
+      picks.push(t);
+    });
+    // 桌面端左栏已经有同一份历史，空态不重复；手机上左栏是抽屉，才在这里露出
+    if (!picks.length || !window.matchMedia('(max-width: 900px)').matches) { box.hidden = true; return; }
+    list.innerHTML = '';
+    picks.slice(0, 4).forEach((t) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'recent-item';
+      b.textContent = t;
+      b.title = t;
+      b.addEventListener('click', () => submit(t));
+      list.appendChild(b);
+    });
+    box.hidden = false;
+  }
+
   async function loadConversations() {
     try {
       const r = await fetch('/api/conversations');
       if (!r.ok) return;
       const data = await r.json();
       renderConvList(data.items || []);
+      renderRecent(data.items || []);
     } catch { /* 历史加载失败不影响提问 */ }
   }
 
@@ -331,10 +359,15 @@
 
   // ------------------------------------------------------------------ 审计
   async function openAudit() {
+    lastFocus = document.activeElement;
     $('#audit-body').innerHTML = '<div class="placeholder">加载中…</div>';
     $('#app').classList.remove('show-history');
-    $('#audit-drawer').classList.add('open');
+    toggleDrawer(false);
+    const box = $('#audit-drawer');
+    box.classList.add('open');
+    box.setAttribute('aria-hidden', 'false');
     $('#backdrop').classList.add('open');
+    focusIn(box);
     try {
       const { rows, stats } = await (await fetch('/api/audit?limit=60')).json();
       const head = stats && stats.users !== undefined ? `<div class="audit-meta">
@@ -481,6 +514,7 @@
   }
 
   function setRunning(on) {
+    thread.setAttribute('aria-busy', on ? 'true' : 'false');
     const box = $('#run-status');
     if (box) box.hidden = !on;
     if (sendBtn) {
@@ -553,13 +587,39 @@
   function stepEl(step) {
     const li = document.createElement('li');
     li.className = `step ${step.status || 'done'}`;
-    const icon = step.status === 'fail' ? '×' : '';
+    if (step.ms != null) li.dataset.ms = step.ms;
     li.innerHTML = `
       <div class="dot"></div>
       <div class="t"><strong>${esc(step.title)}</strong><span>${step.ms != null ? step.ms + ' ms' : ''}</span></div>
-      <div class="d">${esc(step.detail || '')}</div>`;
-    if (icon) li.querySelector('.dot').textContent = '';
+      <div class="d">${esc(step.detail || '')}</div>
+      <div class="step-bar-wrap"><i class="step-bar"></i></div>`;
     return li;
+  }
+
+  function withBars() {
+    const all = [...stepsEl.querySelectorAll('.step')];
+    const max = Math.max(...all.map((el) => Number(el.dataset.ms) || 0), 1);
+    all.forEach((el) => {
+      const ms = Number(el.dataset.ms) || 0;
+      const bar = el.querySelector('.step-bar');
+      if (!bar) return;
+      if (!ms) { bar.style.display = 'none'; return; }
+      bar.style.width = `${Math.max((ms / max) * 100, 2.5)}%`;
+      if (ms === max) bar.classList.add('slow');
+    });
+  }
+
+  function traceSummary() {
+    const items = [...stepsEl.querySelectorAll('.step')].filter((el) => el.dataset.ms);
+    const old = stepsEl.parentElement.querySelector('.trace-foot');
+    if (old) old.remove();
+    if (!items.length) return;
+    const total = items.reduce((a, el) => a + (Number(el.dataset.ms) || 0), 0);
+    const slow = items.reduce((a, el) => (Number(el.dataset.ms) > Number(a.dataset.ms) ? el : a), items[0]);
+    const foot = document.createElement('div');
+    foot.className = 'trace-foot';
+    foot.innerHTML = `<span>${items.length} 步 · 合计 ${fmtDuration(total)}</span><span>最慢：${esc(slow.querySelector('strong')?.textContent || '')} ${slow.dataset.ms} ms</span>`;
+    stepsEl.after(foot);
   }
 
   function pushStep(step) {
@@ -576,6 +636,7 @@
     if (step.key === 'repair' && step.sql) sqlEl.textContent = step.sql;
     const rs = $('#run-status-text');
     if (rs) rs.textContent = `正在${step.title}…`;
+    withBars();
     scrollBottom();
   }
 
@@ -702,6 +763,23 @@
     return wrap;
   }
 
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return '已复制';
+    } catch { /* 退回 execCommand */ }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    return ok ? '已复制' : '复制失败';
+  }
+
   async function copyCsv(data) {
     const esc2 = (v) => {
       const t = v == null ? '' : String(v);
@@ -726,6 +804,19 @@
     ta.remove();
     toast(ok ? '已复制 CSV' : '复制失败，请手动选择');
 
+  }
+
+  function followUps(data) {
+    const q = data.question || '';
+    const cols = (data.columns || []).join(' ');
+    const out = [];
+    if (!/趋势|按月|每月|走势/.test(q)) out.push('近 12 个月的趋势');
+    const hasChannel = /渠道/.test(q + cols);
+    const hasProduct = /险种|产品/.test(q + cols);
+    if (hasChannel && !hasProduct) out.push('按险种拆开看');
+    if (hasProduct && !hasChannel) out.push('按渠道拆开看');
+    if (!/今年|累计|年至今/.test(q)) out.push('今年累计是多少');
+    return out.slice(0, 3);
   }
 
   function renderFinal(view, data) {
@@ -754,7 +845,22 @@
       const kpis = buildKpis(data);
       if (kpis.length) bubble.appendChild(kpiStrip(kpis));
       const single = data.row_count === 1 && (data.columns || []).length <= 2 && kpis.length > 0;
-      if (data.row_count > 0 && !single) bubble.appendChild(resultBlock(data));
+      if (data.row_count > 0 && !single) {
+        const chart = window.SQChart?.render(data);
+        if (chart) {
+          bubble.appendChild(chart);
+          const det = document.createElement('details');
+          det.className = 'fold fold-table';
+          det.innerHTML = `<summary>数据表<span class="count">${data.row_count} 行</span></summary>`;
+          const body = document.createElement('div');
+          body.className = 'fold-body';
+          body.appendChild(resultBlock(data));
+          det.appendChild(body);
+          bubble.appendChild(det);
+        } else {
+          bubble.appendChild(resultBlock(data));
+        }
+      }
     }
 
     if (data.assumptions?.length) {
@@ -789,6 +895,15 @@
     if (data.scope) bits.push(`数据域 ${esc(data.scope)}`);
     if (data.mode !== 'live') bits.push('离线模板');
     meta.innerHTML = `<span>${bits.join(' · ')}</span>`;
+    const copyAnswer = document.createElement('button');
+    copyAnswer.type = 'button';
+    copyAnswer.className = 'link-btn';
+    copyAnswer.textContent = '复制结论';
+    copyAnswer.addEventListener('click', async () => {
+      copyAnswer.textContent = await copyText(data.answer || '');
+      setTimeout(() => (copyAnswer.textContent = '复制结论'), 1500);
+    });
+    meta.appendChild(copyAnswer);
     if (data.question && data.status === 'ok') {
       const again = document.createElement('button');
       again.type = 'button';
@@ -799,6 +914,27 @@
     }
     bubble.appendChild(meta);
 
+    if (data.status === 'ok') {
+      const tips = followUps(data);
+      if (tips.length) {
+        const row = document.createElement('div');
+        row.className = 'follow-ups';
+        const label = document.createElement('span');
+        label.className = 'fu-label';
+        label.textContent = '接着问';
+        row.appendChild(label);
+        tips.forEach((t) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'fu-chip';
+          b.textContent = t;
+          b.addEventListener('click', () => submit(t));
+          row.appendChild(b);
+        });
+        bubble.appendChild(row);
+      }
+    }
+
     evidenceEl.innerHTML = (data.evidence || []).map((e) => `
       <span class="ev ${e.kind}" title="相关度 ${e.score}">
         <b>${esc(e.title)}</b> · ${esc(e.kind)}
@@ -806,7 +942,9 @@
     sqlEl.textContent = data.sql_pretty || data.sql || '-- 本次未生成 SQL';
     if (Array.isArray(data.checks) && data.checks.length) renderChecks(data.checks);
     totalTimeEl.textContent = fmtDuration(data.timings?.total_ms || 0);
-    scrollBottom();
+    withBars();
+    traceSummary();
+    revealAnswer(view.root);
   }
 
   function sqlFold(sql) {
@@ -848,24 +986,57 @@
     thread.scrollTop = thread.scrollHeight;
   }
 
+  // 回答比屏幕高时，停在回答的开头（结论处），而不是甩到底部的 SQL
+  function revealAnswer(root) {
+    if (!root) return scrollBottom();
+    const tTop = thread.getBoundingClientRect().top;
+    const top = root.getBoundingClientRect().top - tTop + thread.scrollTop - 12;
+    const tall = root.offsetHeight > thread.clientHeight - 24;
+    thread.scrollTop = tall ? top : thread.scrollHeight;
+  }
+
   // ------------------------------------------------------------------ 遮罩 / 抽屉
   function closeOverlays() {
     toggleDrawer(false);
-    $('#audit-drawer').classList.remove('open');
+    const audit = $('#audit-drawer');
+    audit.classList.remove('open');
+    audit.setAttribute('aria-hidden', 'true');
     $('#app').classList.remove('show-history');
     $('#backdrop').classList.remove('open');
+    if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+    lastFocus = null;
   }
 
   function toggleHistory(open) {
-    $('#app').classList.toggle('show-history', open);
-    $('#backdrop').classList.toggle('open', open);
+    if (open) {
+      lastFocus = document.activeElement;
+      $('#app').classList.add('show-history');
+      const aside = $('#sidebar');
+      aside.setAttribute('role', 'dialog');
+      aside.setAttribute('aria-modal', 'true');
+      focusIn(aside);
+    } else {
+      $('#app').classList.remove('show-history');
+    }
+    $('#backdrop').classList.toggle('open', open || $('#drawer').classList.contains('open') || $('#audit-drawer').classList.contains('open'));
     if (open) loadConversations();
   }
 
   async function toggleDrawer(open) {
-    if (open) $('#app').classList.remove('show-history');
-    $('#drawer').classList.toggle('open', open);
-    $('#backdrop').classList.toggle('open', open);
+    if (open) {
+      lastFocus = document.activeElement;
+      $('#app').classList.remove('show-history');
+    }
+    const box = $('#drawer');
+    if (open) {
+      box.classList.add('open');
+      box.setAttribute('aria-hidden', 'false');
+      focusIn(box);
+    } else {
+      box.classList.remove('open');
+      box.setAttribute('aria-hidden', 'true');
+    }
+    $('#backdrop').classList.toggle('open', open || $('#audit-drawer').classList.contains('open') || $('#app').classList.contains('show-history'));
     if (open && !semanticsLoaded) {
       semanticsLoaded = true;
       $('#drawer-body').innerHTML = '<div class="placeholder">加载中…</div>';
