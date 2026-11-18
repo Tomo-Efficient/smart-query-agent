@@ -154,10 +154,21 @@
     });
   }
 
+  function convGroup(iso) {
+    const d = new Date(String(iso || '').replace(' ', 'T'));
+    if (Number.isNaN(d.getTime())) return '更早';
+    const now = new Date();
+    const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (same(d, now)) return '今天';
+    if (same(d, new Date(now.getTime() - 86400000))) return '昨天';
+    return '更早';
+  }
+
   function renderConvList(items) {
     const box = $('#conv-list');
     if (!box) return;
     box.innerHTML = '';
+    let lastGroup = '';
     if (!items.length) {
       box.innerHTML = '<div class="conv-empty">还没有对话</div>';
       return;
@@ -192,6 +203,15 @@
       });
       btn.appendChild(del);
       btn.addEventListener('click', () => openConversation(it.id));
+
+      const group = convGroup(it.updated_at);
+      if (group !== lastGroup) {
+        const g = document.createElement('div');
+        g.className = 'conv-group';
+        g.textContent = group;
+        box.appendChild(g);
+        lastGroup = group;
+      }
       box.appendChild(btn);
     });
   }
@@ -900,14 +920,19 @@
   function followUps(data) {
     const q = data.question || '';
     const cols = (data.columns || []).join(' ');
-    const out = [];
-    if (!/趋势|按月|每月|走势/.test(q)) out.push('近 12 个月的趋势');
+    const along = [];
+    const across = [];
+    if (!/趋势|按月|每月|走势/.test(q)) along.push('近 12 个月的趋势');
+    if (!/今年|累计|年至今/.test(q)) along.push('今年累计是多少');
     const hasChannel = /渠道/.test(q + cols);
     const hasProduct = /险种|产品/.test(q + cols);
-    if (hasChannel && !hasProduct) out.push('按险种拆开看');
-    if (hasProduct && !hasChannel) out.push('按渠道拆开看');
-    if (!/今年|累计|年至今/.test(q)) out.push('今年累计是多少');
-    return out.slice(0, 3);
+    if (hasChannel && !hasProduct) across.push('按险种拆开看');
+    if (hasProduct && !hasChannel) across.push('按渠道拆开看');
+    if (!hasChannel && !hasProduct) across.push('按渠道拆开看');
+    return [
+      { label: '顺着看', items: along.slice(0, 2) },
+      { label: '换个维度', items: across.slice(0, 2) },
+    ].filter((g) => g.items.length);
   }
 
   function renderFinal(view, data) {
@@ -977,30 +1002,8 @@
       }
     }
 
-    if (data.assumptions?.length) {
-      const box = document.createElement('div');
-      box.className = 'assumptions';
-      box.innerHTML = data.assumptions.map((a) => `<span class="tag">${esc(a)}</span>`).join('');
-      bubble.appendChild(box);
-    }
-
-    if (data.sql || (data.checks || []).length) {
-      const folds = document.createElement('div');
-      folds.className = 'folds';
-      const sqlText = data.sql_pretty || data.sql;
-      if (sqlText) folds.appendChild(sqlFold(sqlText));
-      if ((data.checks || []).length) {
-        const det = document.createElement('details');
-        det.className = 'fold';
-        det.innerHTML = `<summary>校验项<span class="count">${data.checks.length} 项</span></summary>`;
-        const body = document.createElement('div');
-        body.className = 'fold-body';
-        body.appendChild(checksList(data.checks));
-        det.appendChild(body);
-        folds.appendChild(det);
-      }
-      bubble.appendChild(folds);
-    }
+    const basis = basisFold(data);
+    if (basis) bubble.appendChild(basis);
 
     const meta = document.createElement('div');
     meta.className = 'meta-row';
@@ -1040,21 +1043,26 @@
     bubble.appendChild(meta);
 
     if (data.status === 'ok') {
-      const tips = followUps(data);
-      if (tips.length) {
+      const groups = followUps(data);
+      if (groups.length) {
         const row = document.createElement('div');
         row.className = 'follow-ups';
-        const label = document.createElement('span');
-        label.className = 'fu-label';
-        label.textContent = '接着问';
-        row.appendChild(label);
-        tips.forEach((t) => {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'fu-chip';
-          b.textContent = t;
-          b.addEventListener('click', () => submit(t));
-          row.appendChild(b);
+        groups.forEach((g) => {
+          const block = document.createElement('div');
+          block.className = 'fu-group';
+          const label = document.createElement('span');
+          label.className = 'fu-label';
+          label.textContent = g.label;
+          block.appendChild(label);
+          g.items.forEach((t) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'fu-chip';
+            b.textContent = t;
+            b.addEventListener('click', () => submit(t));
+            block.appendChild(b);
+          });
+          row.appendChild(block);
         });
         bubble.appendChild(row);
       }
@@ -1070,6 +1078,62 @@
     withBars();
     traceSummary();
     revealAnswer(view.root);
+  }
+
+  function basisFold(data) {
+    const assumptions = data.assumptions || [];
+    const checks = data.checks || [];
+    const sqlText = data.sql_pretty || data.sql;
+    if (!assumptions.length && !checks.length && !sqlText) return null;
+
+    const count = [
+      assumptions.length ? `口径 ${assumptions.length}` : '',
+      checks.length ? `校验 ${checks.length}` : '',
+      sqlText ? 'SQL' : '',
+    ].filter(Boolean).join(' · ');
+
+    const det = document.createElement('details');
+    det.className = 'fold basis';
+    det.innerHTML = `<summary>依据<span class="count">${count}</span></summary>`;
+    const body = document.createElement('div');
+    body.className = 'fold-body';
+
+    if (assumptions.length) {
+      const sec = document.createElement('div');
+      sec.className = 'basis-sec';
+      sec.innerHTML = `<span class="basis-k">口径</span><div class="basis-tags">${assumptions
+        .map((a) => `<span class="tag">${esc(a)}</span>`).join('')}</div>`;
+      body.appendChild(sec);
+    }
+    if (checks.length) {
+      const sec = document.createElement('div');
+      sec.className = 'basis-sec';
+      sec.innerHTML = '<span class="basis-k">校验</span>';
+      sec.appendChild(checksList(checks));
+      body.appendChild(sec);
+    }
+    if (sqlText) {
+      const sec = document.createElement('div');
+      sec.className = 'basis-sec';
+      sec.innerHTML = '<span class="basis-k">SQL</span>';
+      const pre = document.createElement('pre');
+      pre.className = 'sql';
+      pre.textContent = sqlText;
+      sec.appendChild(pre);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost-btn';
+      btn.style.marginTop = '8px';
+      btn.textContent = '复制 SQL';
+      btn.addEventListener('click', async () => {
+        btn.textContent = await copyText(sqlText);
+        setTimeout(() => (btn.textContent = '复制 SQL'), 1500);
+      });
+      sec.appendChild(btn);
+      body.appendChild(sec);
+    }
+    det.appendChild(body);
+    return det;
   }
 
   function sqlFold(sql) {
@@ -1197,8 +1261,15 @@
     const q = input.value;
     input.value = '';
     autoGrow();
+    syncSendState();
     submit(q);
   });
+
+  syncSendState();
+  function syncSendState() {
+    if (sendBtn && !busy) sendBtn.setAttribute('aria-disabled', String(!input.value.trim()));
+  }
+  input.addEventListener('input', syncSendState);
 
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
