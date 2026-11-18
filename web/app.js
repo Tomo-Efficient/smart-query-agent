@@ -735,14 +735,6 @@
     const right = document.createElement('span');
     right.className = 'result-right';
     right.textContent = `${data.row_count} 行${data.truncated ? ' · 已截断' : ''}`;
-    if (rows.length) {
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'link-btn';
-      copy.textContent = '复制 CSV';
-      copy.addEventListener('click', () => copyCsv(data));
-      right.appendChild(copy);
-    }
     head.appendChild(right);
 
     const table = document.createElement('div');
@@ -780,7 +772,7 @@
     return ok ? '已复制' : '复制失败';
   }
 
-  async function copyCsv(data) {
+  async function copyCsv(data, silent) {
     const esc2 = (v) => {
       const t = v == null ? '' : String(v);
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
@@ -790,8 +782,8 @@
     const text = lines.join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      toast('已复制 CSV');
-      return;
+      if (!silent) toast('已复制 CSV');
+      return '已复制';
     } catch { /* 退回到 execCommand */ }
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -802,7 +794,8 @@
     let ok = false;
     try { ok = document.execCommand('copy'); } catch { ok = false; }
     ta.remove();
-    toast(ok ? '已复制 CSV' : '复制失败，请手动选择');
+    if (!silent) toast(ok ? '已复制 CSV' : '复制失败，请手动选择');
+    return ok ? '已复制' : '复制失败';
 
   }
 
@@ -904,6 +897,17 @@
       setTimeout(() => (copyAnswer.textContent = '复制结论'), 1500);
     });
     meta.appendChild(copyAnswer);
+    if ((data.rows || []).length) {
+      const copyRows = document.createElement('button');
+      copyRows.type = 'button';
+      copyRows.className = 'link-btn';
+      copyRows.textContent = '复制数据';
+      copyRows.addEventListener('click', async () => {
+        copyRows.textContent = await copyCsv(data, true);
+        setTimeout(() => (copyRows.textContent = '复制数据'), 1500);
+      });
+      meta.appendChild(copyRows);
+    }
     if (data.question && data.status === 'ok') {
       const again = document.createElement('button');
       again.type = 'button';
