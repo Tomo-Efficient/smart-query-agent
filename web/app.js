@@ -561,7 +561,8 @@
     el.innerHTML = `
       <div class="bubble">
         <div class="answer-head"><span class="status running">运行中</span></div>
-        <div class="answer is-pending">正在检索语义资产并规划查询…</div>
+        <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="answer is-pending" style="margin-top:10px">正在检索语义资产并规划查询…</div>
       </div>`;
     inner.appendChild(el);
     scrollBottom();
@@ -703,11 +704,26 @@
     return box;
   }
 
-  function callout(kind, title, text) {
+  const CALLOUT_ICON = { error: '!', blocked: '×', clarification: '?', permission: '⊘', empty: '∅' };
+
+  function callout(kind, title, text, actions) {
     const el = document.createElement('div');
     el.className = `callout ${kind}`;
-    el.innerHTML = `<span class="callout-ic" aria-hidden="true">${kind === 'error' ? '!' : kind === 'blocked' ? '×' : '?'}</span>
+    el.innerHTML = `<span class="callout-ic" aria-hidden="true">${CALLOUT_ICON[kind] || '?'}</span>
       <div class="callout-body"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
+    if (Array.isArray(actions) && actions.length) {
+      const row = document.createElement('div');
+      row.className = 'callout-actions';
+      actions.forEach((a) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn';
+        b.textContent = a.label;
+        b.addEventListener('click', a.run);
+        row.appendChild(b);
+      });
+      el.querySelector('.callout-body').appendChild(row);
+    }
     return el;
   }
 
@@ -799,6 +815,88 @@
 
   }
 
+  function swapDim(q) {
+    if (/渠道/.test(q)) return q.replace(/渠道/g, '险种');
+    if (/险种|产品/.test(q)) return q.replace(/险种|产品/g, '渠道');
+    return `${q.replace(/[？?。\s]*$/, '')}，按渠道拆开`;
+  }
+
+  function clarifyOptions(data) {
+    const a = data.answer || '';
+    const opts = [];
+    if (/维度|渠道|险种|产品/.test(a)) {
+      opts.push(
+        { label: '按渠道', run: () => submit('上月各渠道保费收入是多少') },
+        { label: '按险种', run: () => submit('上月各险种保费收入是多少') },
+        { label: '整体', run: () => submit('上月保费收入是多少') },
+      );
+    } else {
+      opts.push(
+        { label: '保费收入', run: () => submit('上月各渠道保费收入是多少') },
+        { label: '保单件数', run: () => submit('上月各渠道保单件数是多少') },
+        { label: '退保率', run: () => submit('上月各渠道退保率') },
+      );
+    }
+    void data;
+    return opts.slice(0, 3);
+  }
+
+  function resultPanel(data) {
+    const chart = window.SQChart?.render(data);
+    const wrap = document.createElement('div');
+    wrap.className = 'result-panel';
+    if (!chart) {
+      wrap.appendChild(resultBlock(data));
+      return wrap;
+    }
+
+    let pref = 'chart';
+    try { pref = sessionStorage.getItem('sq-result-view') || 'chart'; } catch { /* 隐私模式 */ }
+
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.setAttribute('role', 'tablist');
+    seg.setAttribute('aria-label', '结果视图');
+
+    const chartBox = document.createElement('div');
+    chartBox.className = 'result-view';
+    chartBox.appendChild(chart);
+
+    const tableBox = document.createElement('div');
+    tableBox.className = 'result-view';
+    tableBox.appendChild(resultBlock(data));
+
+    const mkBtn = (key, label) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-btn';
+      b.dataset.view = key;
+      b.textContent = label;
+      b.setAttribute('role', 'tab');
+      b.addEventListener('click', () => apply(key));
+      seg.appendChild(b);
+      return b;
+    };
+    mkBtn('chart', '图');
+    mkBtn('table', '表');
+
+    function apply(view) {
+      pref = view;
+      try { sessionStorage.setItem('sq-result-view', view); } catch { /* 忽略 */ }
+      seg.querySelectorAll('.seg-btn').forEach((b) => {
+        const on = b.dataset.view === view;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      chartBox.hidden = view !== 'chart';
+      tableBox.hidden = view !== 'table';
+    }
+
+    wrap.append(seg, chartBox, tableBox);
+    apply(pref === 'table' ? 'table' : 'chart');
+    return wrap;
+  }
+
   function followUps(data) {
     const q = data.question || '';
     const cols = (data.columns || []).join(' ');
@@ -813,7 +911,8 @@
   }
 
   function renderFinal(view, data) {
-    const [cls, label] = STATUS[data.status] || ['ok', data.status];
+    let [cls, label] = STATUS[data.status] || ['ok', data.status];
+    if (data.status === 'ok' && data.row_count === 0) label = '无数据';
     stepsEl.querySelector('.step.running')?.remove();
     const bubble = view.bubble;
     bubble.innerHTML = '';
@@ -824,42 +923,64 @@
     bubble.appendChild(head);
 
     if (data.status === 'blocked') {
-      bubble.appendChild(callout('blocked', '请求已拦截', data.answer || ''));
+      const denied = /数据域|权限|无权|不支持按|越权/.test(data.answer || '');
+      if (denied) {
+        bubble.appendChild(callout(
+          'permission',
+          '这个范围不在你的数据域内',
+          `${data.answer || ''} 当前数据域：${data.scope || '未设置'}。换成你范围内的维度或时间再试。`,
+          [
+            { label: '换成按险种看', run: () => submit((data.question || '').replace(/渠道/g, '险种')) },
+            { label: '查看我的数据域', run: () => toast(`数据域：${data.scope || '未设置'}`) },
+          ],
+        ));
+      } else {
+        bubble.appendChild(callout(
+          'blocked',
+          '请求已拦截',
+          data.answer || '',
+          [{ label: '看看安全问法', run: () => submit('上月各渠道保费收入是多少') }],
+        ));
+      }
     } else if (data.status === 'clarification') {
-      bubble.appendChild(callout('clarification', '需要补充一点信息', data.answer || ''));
+      bubble.appendChild(callout(
+        'clarification',
+        '需要补充一点信息',
+        data.answer || '',
+        clarifyOptions(data),
+      ));
     } else if (data.status === 'error') {
       bubble.appendChild(callout('error', '执行失败', data.answer || '请换一种问法。'));
     } else {
-      const answer = document.createElement('div');
-      answer.className = 'answer';
-      answer.textContent = data.answer || '';
-      bubble.appendChild(answer);
+      if (data.row_count !== 0) {
+        const answer = document.createElement('div');
+        answer.className = 'answer';
+        answer.textContent = data.answer || '';
+        bubble.appendChild(answer);
+      }
 
       const kpis = buildKpis(data);
       if (kpis.length) bubble.appendChild(kpiStrip(kpis));
       const single = data.row_count === 1 && (data.columns || []).length <= 2 && kpis.length > 0;
-      if (data.row_count > 0 && !single) {
-        const chart = window.SQChart?.render(data);
-        if (chart) {
-          bubble.appendChild(chart);
-          const det = document.createElement('details');
-          det.className = 'fold fold-table';
-          det.innerHTML = `<summary>数据表<span class="count">${data.row_count} 行</span></summary>`;
-          const body = document.createElement('div');
-          body.className = 'fold-body';
-          body.appendChild(resultBlock(data));
-          det.appendChild(body);
-          bubble.appendChild(det);
-        } else {
-          bubble.appendChild(resultBlock(data));
-        }
+      if (data.row_count === 0) {
+        bubble.appendChild(callout(
+          'empty',
+          '没有匹配的数据',
+          data.answer || '这个条件下没有数据，可能是时间窗太窄或维度没数据。',
+          [
+            { label: '放宽到近 3 个月', run: () => submit((data.question || '').replace(/上月|上个月|本月/g, '近 3 个月')) },
+            { label: '换个维度', run: () => submit(swapDim(data.question || '')) },
+          ],
+        ));
+      } else if (!single) {
+        bubble.appendChild(resultPanel(data));
       }
     }
 
     if (data.assumptions?.length) {
       const box = document.createElement('div');
       box.className = 'assumptions';
-      box.innerHTML = data.assumptions.map((a) => `<span class="tag">口径 · ${esc(a)}</span>`).join('');
+      box.innerHTML = data.assumptions.map((a) => `<span class="tag">${esc(a)}</span>`).join('');
       bubble.appendChild(box);
     }
 

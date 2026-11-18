@@ -5,13 +5,46 @@
    ========================================================================== */
 
 :root {
-  --ink: #111;
-  --ink-soft: #333;
-  --muted: #6b6b6b;
-  --faint: #9a9a9a;
-  --line: #e4e4e4;
+  /* 墨阶：正文 → 次级 → 说明 → meta（最后一级 4.6:1，达 WCAG AA） */
+  --ink-900: #0e0f11;
+  --ink-700: #35373b;
+  --ink-500: #5f6368;
+  --ink-400: #7a7e85;
+  --line-200: #e7e7e9;
+  --line-300: #d6d6d9;
+  --surface-50: #fafafa;
+  --surface-100: #f4f4f5;
+  /* 功能色只用于图标、1–3px 边框、焦点环，不做大面积填充 */
+  --focus: #1d4ed8;
+  --danger: #b42318;
+  --warn: #b54708;
+  --ok: #067647;
+
+  /* 兼容别名：旧规则继续可用 */
+  --ink: var(--ink-900);
+  --ink-soft: var(--ink-700);
+  --muted: var(--ink-500);
+  --faint: var(--ink-400);
+  --line: var(--line-200);
   --bg: #fff;
-  --soft: #f6f6f6;
+  --soft: var(--surface-50);
+
+  /* 字阶：8 档 */
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-16: 16px;
+  --fs-24: 24px;
+  --fs-28: 28px;
+
+  /* 间距与动效 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+  --dur-fast: 120ms; --dur: 180ms; --dur-slow: 240ms;
+  --ease: cubic-bezier(.2, .6, .2, 1);
+
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -111,12 +144,16 @@ a { color: inherit; text-decoration: none; }
   display: inline-block; font-size: 11px; letter-spacing: .08em;
   padding: 1px 7px; border: 1px solid var(--ink);
 }
-.status.running { border-style: dashed; color: var(--muted); border-color: var(--faint); }
+.status.running { border-style: dashed; color: var(--ink-500); border-color: var(--line-300); }
 .status.blocked { background: var(--ink); color: #fff; }
-.status.clarification { border-style: dashed; }
-.status.error { border-color: var(--faint); color: var(--muted); }
+.status.clarification { border-style: dashed; border-color: var(--warn); }
+.status.error { border-color: var(--danger); }
+.status.permission { border-style: dotted; border-color: var(--ink-700); }
 
-.answer { font-size: 15px; line-height: 1.75; color: var(--ink); }
+.answer {
+  font-size: var(--fs-15); line-height: 1.75; color: var(--ink);
+  max-width: 68ch;   /* 编辑行长：正文不再铺满整栏 */
+}
 
 /* KPI */
 .kpis {
@@ -125,7 +162,7 @@ a { color: inherit; text-decoration: none; }
 }
 .kpi { padding: 12px 24px 12px 0; margin-right: 24px; border-right: 1px solid var(--line); }
 .kpi:last-child { border-right: 0; }
-.kpi-k { display: block; font-size: 11px; color: var(--faint); letter-spacing: .04em; }
+.kpi-k { display: block; font-size: var(--fs-11); color: var(--ink-500); letter-spacing: .04em; }
 .kpi-v {
   display: block; font-size: 26px; line-height: 1.3; font-weight: 400;
   font-variant-numeric: tabular-nums; letter-spacing: -.01em;
@@ -155,19 +192,43 @@ table.result td.num, table.result th.num { width: 1%; white-space: nowrap; }
 
 /* 状态卡 */
 .callout {
-  display: flex; gap: 10px; align-items: flex-start;
-  border: 1px solid var(--ink); padding: 12px 14px; margin-top: 2px;
+  position: relative; display: flex; gap: var(--sp-3); align-items: flex-start;
+  border: 1px solid var(--line-300); background: var(--surface-50);
+  padding: 13px 15px 13px 18px; margin-top: 2px;
+}
+.callout::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--ink-900);
 }
 .callout-ic {
   flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px;
-  border: 1px solid var(--ink); display: grid; place-items: center; font-size: 11px;
+  border: 1px solid var(--ink); display: grid; place-items: center;
+  font-size: 11px; line-height: 1;
 }
-.callout-body strong { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 2px; }
-.callout-body p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--ink-soft); }
+.callout-body strong { display: block; font-size: var(--fs-13); font-weight: 600; margin-bottom: 2px; letter-spacing: .01em; }
+.callout-body p { margin: 0; font-size: var(--fs-13); line-height: 1.7; color: var(--ink-soft); max-width: 68ch; }
 .callout.clarification { border-style: dashed; }
-.callout.error { border-color: var(--faint); }
-.callout.error .callout-ic { border-color: var(--faint); color: var(--muted); }
-.callout.error .callout-body p { color: var(--muted); }
+.callout.clarification::before { width: 2px; background: var(--warn); }
+.callout.clarification .callout-ic { border-color: var(--warn); color: var(--warn); }
+
+.callout.error::before {
+  background: repeating-linear-gradient(45deg, var(--danger) 0 3px, transparent 3px 7px);
+}
+.callout.error .callout-ic { border-color: var(--danger); color: var(--danger); }
+
+.callout.permission::before { width: 3px; background: var(--ink-700); }
+.callout.permission .callout-ic { border-color: var(--ink-700); }
+
+.callout.empty::before { width: 3px; background: var(--line-300); }
+.callout.empty .callout-ic { border-color: var(--ink-400); color: var(--ink-500); }
+
+/* 状态卡里的可点动作 */
+.callout-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.callout-actions .btn {
+  border: 1px solid var(--ink); background: var(--bg); padding: 4px 10px;
+  font-size: var(--fs-12); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.callout-actions .btn:hover { background: var(--ink); color: #fff; }
 
 /* 口径与元信息 */
 .assumptions { margin-top: 12px; font-size: 11.5px; color: var(--muted); }
@@ -175,7 +236,10 @@ table.result td.num, table.result th.num { width: 1%; white-space: nowrap; }
   display: inline-block; margin: 0 10px 4px 0; padding: 1px 6px;
   border: 1px solid var(--line); color: var(--muted);
 }
-.meta-row { margin-top: 10px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.meta-row {
+  margin-top: var(--sp-3); font-size: var(--fs-12); color: var(--ink-400);
+  font-variant-numeric: tabular-nums; display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+}
 
 /* 折叠 */
 .folds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
@@ -268,7 +332,7 @@ kbd { border: 1px solid var(--line); padding: 0 4px; font-family: var(--mono); f
 .step .t { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; }
 .step .t strong { font-weight: 500; }
 .step .t span { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
-.step .d { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin-top: 2px; }
+.step .d { font-size: var(--fs-12); color: var(--ink-500); line-height: 1.65; margin-top: 3px; }
 .step.fail .d { color: var(--ink); }
 
 .evidence { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -594,7 +658,7 @@ table.result thead th:first-child { background: var(--soft); }
 }
 .chart-svg { display: block; width: 100%; height: auto; }
 .chart-grid { stroke: var(--line); stroke-width: 1; }
-.chart-tick { font-family: var(--mono); font-size: 9.5px; fill: var(--faint); }
+.chart-tick { font-family: var(--mono); font-size: var(--fs-11); fill: var(--ink-400); }
 .chart-line {
   fill: none; stroke: var(--ink); stroke-width: 1.5;
   stroke-dasharray: 1; stroke-dashoffset: 1;
@@ -665,3 +729,29 @@ table.result thead th:first-child { background: var(--soft); }
 @media (max-width: 900px) {
   .composer-wrap { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
+
+/* ---------------------------------------------------------------- 图 / 表 切换 */
+.result-panel { margin-top: var(--sp-4); }
+.seg {
+  display: inline-flex; border: 1px solid var(--line-300); margin-bottom: var(--sp-3);
+}
+.seg-btn {
+  border: 0; background: none; padding: 3px 12px; font-size: var(--fs-12);
+  color: var(--ink-500); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--line-300); }
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.active { background: var(--ink); color: #fff; }
+.result-view[hidden] { display: none !important; }
+.result-panel .result-block { margin-top: 0; }
+
+/* ---------------------------------------------------------------- 加载骨架 */
+.skeleton { display: flex; flex-direction: column; gap: 10px; padding: 2px 0; }
+.skeleton i {
+  display: block; height: 12px; background: var(--surface-100);
+  animation: sq-pulse 1.4s ease-in-out infinite;
+}
+.skeleton i:nth-child(1) { width: 72%; }
+.skeleton i:nth-child(2) { width: 54%; }
+.skeleton i:nth-child(3) { width: 88%; height: 96px; }
+@media (prefers-reduced-motion: reduce) { .skeleton i { animation: none; } }
