@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>智能问数 Agent · 可运行的 NL2SQL</title>
-<meta name="description" content="智能问数 Agent：自然语言问数，语义层约束口径、护栏拦截危险请求、数据域限制可见范围，164 道题可复现评测。合成数据复现，代码开源。">
+<meta name="description" content="自然语言问数：结论、图表、SQL 与校验依据，一条链路全部可查。164 题在线评测 90.9%，代码开源。">
 <style>
   :root{
     --ink:#111214;
@@ -15,159 +15,100 @@
     --line-2:#d6d6d9;
     --bg:#ffffff;
     --soft:#f7f7f8;
-    --focus:#1d4ed8;
     --mono:"SF Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
     --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
     --max:1080px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
-  body{
-    background:var(--bg);color:var(--ink);font-family:var(--sans);
-    font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;
-  }
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
   a{color:inherit}
   ::selection{background:#111;color:#fff}
   .wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
 
-  /* ---------- 顶栏 ---------- */
   header{border-bottom:1px solid var(--line)}
   .bar{display:flex;align-items:center;justify-content:space-between;height:60px}
   .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
-  .mark{
-    width:26px;height:26px;background:var(--ink);color:#fff;display:grid;place-items:center;
-    font-size:13px;font-weight:600;border-radius:2px;
-  }
-  .brand b{font-size:14px;font-weight:600;letter-spacing:.01em}
-  .bar nav{display:flex;align-items:center;gap:22px;font-size:13px;color:var(--muted)}
-  .bar nav a{text-decoration:none;padding-bottom:2px;border-bottom:1px solid transparent;transition:border-color .15s,color .15s}
+  .mark{width:26px;height:26px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:600;border-radius:2px}
+  .brand b{font-size:14px;font-weight:600}
+  .bar nav{display:flex;align-items:center;gap:24px;font-size:13px;color:var(--muted)}
+  .bar nav a{text-decoration:none;border-bottom:1px solid transparent;padding-bottom:2px;transition:border-color .15s,color .15s}
   .bar nav a:hover{color:var(--ink);border-bottom-color:var(--ink)}
 
-  /* ---------- 主视觉 ---------- */
-  .hero{padding:92px 0 64px;border-bottom:1px solid var(--line)}
-  .eyebrow{
-    font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--faint);
-    text-transform:uppercase;margin-bottom:22px;
-  }
-  h1{
-    font-size:clamp(30px,4.4vw,46px);line-height:1.18;letter-spacing:-.02em;font-weight:600;
-    max-width:15em;text-wrap:balance;
-  }
-  .lead{margin-top:20px;max-width:38em;color:var(--ink-2);font-size:16px}
-  .lead b{font-weight:600;color:var(--ink)}
-  .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
-  .btn{
-    display:inline-flex;align-items:center;gap:8px;text-decoration:none;
-    border:1px solid var(--ink);padding:11px 18px;font-size:13.5px;font-weight:500;
-    transition:background .15s,color .15s;
-  }
+  .hero{padding:84px 0 56px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--faint);margin-bottom:20px;text-transform:uppercase}
+  h1{font-size:clamp(30px,4.4vw,46px);line-height:1.16;letter-spacing:-.02em;font-weight:600;text-wrap:balance}
+  .lead{margin-top:18px;max-width:34em;color:var(--ink-2);font-size:16px}
+  .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+  .btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;border:1px solid var(--ink);padding:11px 18px;font-size:13.5px;font-weight:500;transition:background .15s,color .15s}
   .btn.primary{background:var(--ink);color:#fff}
   .btn.primary:hover{background:#000}
   .btn.ghost:hover{background:var(--soft)}
-  .btn .k{font-family:var(--mono);font-size:11px;opacity:.55}
+  .btn .k{font-family:var(--mono);font-size:11px;opacity:.5}
 
-  /* ---------- 数字条 ---------- */
   .facts{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
-  .fact{padding:30px 0 32px;border-left:1px solid var(--line);padding-left:22px}
+  .fact{padding:28px 0 30px;border-left:1px solid var(--line);padding-left:22px}
   .fact:first-child{border-left:0;padding-left:0}
   .fact .v{font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
   .fact .v small{font-size:15px;font-weight:500;color:var(--muted);margin-left:2px}
-  .fact .k{margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .fact .k{margin-top:6px;font-size:12.5px;color:var(--muted)}
 
-  /* ---------- 区块 ---------- */
-  section{padding:64px 0;border-bottom:1px solid var(--line)}
-  .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:24px;margin-bottom:34px}
-  h2{font-size:20px;font-weight:600;letter-spacing:-.01em}
-  .sec-note{font-size:12.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.04em}
+  section{padding:56px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:19px;font-weight:600;letter-spacing:-.01em;margin-bottom:26px}
 
-  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
-  .cell{background:#fff;padding:22px 20px 24px}
-  .cell h3{font-size:14px;font-weight:600;margin-bottom:6px}
-  .cell p{font-size:13px;color:var(--muted);line-height:1.66}
-  .cell .idx{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.1em;display:block;margin-bottom:12px}
-
-  /* ---------- 截图 ---------- */
-  .shots{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   .shot{display:block;text-decoration:none}
   .shot.big{grid-column:1 / -1}
   .frame{border:1px solid var(--line-2);background:var(--soft);overflow:hidden}
   .frame img{display:block;width:100%;height:auto}
-  .shots .shot:not(.big) .frame{
-    aspect-ratio:4/3;display:grid;place-items:center;padding:10px;
-  }
+  .shots .shot:not(.big) .frame{position:relative;aspect-ratio:4/3}
   .shots .shot:not(.big) .frame img{
-    width:auto;max-width:100%;max-height:100%;object-fit:contain;
-    border:1px solid var(--line);
+    position:absolute;inset:12px;width:calc(100% - 24px);height:calc(100% - 24px);
+    object-fit:contain;border:1px solid var(--line);
   }
-  .cap{display:flex;justify-content:space-between;gap:16px;margin-top:10px;font-size:12px;color:var(--muted)}
-  .cap span:last-child{color:var(--faint);font-family:var(--mono);font-size:11px;white-space:nowrap}
+  .cap{display:flex;justify-content:space-between;gap:16px;margin-top:9px;font-size:12px;color:var(--muted)}
+  .cap span:last-child{color:var(--faint);font-family:var(--mono);font-size:11px}
 
-  /* ---------- 本地运行 ---------- */
-  .run{display:grid;grid-template-columns:1fr 1.05fr;gap:44px;align-items:start}
-  .run p{color:var(--ink-2);font-size:14px;margin-bottom:14px}
-  .run ol{list-style:none;counter-reset:s;display:grid;gap:16px}
-  .run li{counter-increment:s;display:grid;grid-template-columns:26px 1fr;gap:12px;font-size:13.5px;color:var(--muted)}
-  .run li::before{
-    content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:11px;
-    color:var(--faint);padding-top:2px;
-  }
-  .run li .li-body{min-width:0;display:block}
-  .run li b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px;font-size:13.5px}
-  pre{
-    background:var(--ink);color:#f4f4f5;font-family:var(--mono);font-size:11.5px;line-height:1.9;
-    padding:20px 22px;border-radius:2px;
-    white-space:pre-wrap;overflow-wrap:anywhere;
-  }
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+  .card{background:#fff;padding:20px}
+  .card h3{font-size:13.5px;font-weight:600;margin-bottom:4px}
+  .card p{font-size:12.5px;color:var(--muted);line-height:1.65}
+
+  .run{display:grid;grid-template-columns:1fr 1.15fr;gap:40px;align-items:start}
+  .run p{font-size:13.5px;color:var(--muted);margin-bottom:14px}
+  .run p:last-child{margin-bottom:0}
+  pre{background:var(--ink);color:#f4f4f5;font-family:var(--mono);font-size:11.5px;line-height:1.9;padding:18px 20px;border-radius:2px;white-space:pre-wrap;overflow-wrap:anywhere}
   pre .c{color:#8e9299}
   pre .g{color:#9ee6b8}
-  code{font-family:var(--mono);font-size:.92em;background:var(--soft);border:1px solid var(--line);padding:1px 5px;border-radius:2px}
 
-  /* ---------- 说明框 ---------- */
-  .note{border:1px solid var(--ink);padding:24px 26px;display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start}
-  .note .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;border:1px solid var(--ink);padding:3px 8px;white-space:nowrap}
-  .note h3{font-size:14.5px;font-weight:600;margin-bottom:8px}
-  .note p{font-size:13.5px;color:var(--ink-2)}
-  .note p + p{margin-top:8px}
-
-  /* ---------- 页脚 ---------- */
-  footer{padding:36px 0 56px;font-size:12.5px;color:var(--muted)}
-  .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px}
+  footer{padding:30px 0 48px;font-size:12.5px;color:var(--muted)}
+  .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
   .foot a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line-2);padding-bottom:1px}
   .foot a:hover{color:var(--ink);border-bottom-color:var(--ink)}
 
   @media (max-width:860px){
-    .hero{padding:64px 0 48px}
+    .hero{padding:56px 0 40px}
     h1{font-size:27px}
-    .sec-head{flex-direction:column;gap:6px;margin-bottom:24px}
     .facts{grid-template-columns:1fr 1fr}
-    .fact{border-left:0;border-top:1px solid var(--line);padding:22px 0}
+    .fact{border-left:0;border-top:1px solid var(--line);padding:20px 0}
     .fact:nth-child(-n+2){border-top:0}
-    .fact:nth-child(even){padding-left:20px;border-left:1px solid var(--line)}
-    .grid-3{grid-template-columns:1fr}
+    .fact:nth-child(even){padding-left:18px;border-left:1px solid var(--line)}
     .shots{grid-template-columns:1fr}
-    .run{grid-template-columns:1fr;gap:26px}
-    section{padding:48px 0}
-    .bar nav{gap:14px}
+    .cards{grid-template-columns:1fr}
+    .run{grid-template-columns:1fr;gap:22px}
+    section{padding:44px 0}
     .bar nav a.hide-sm{display:none}
   }
-  @media (prefers-reduced-motion:reduce){
-    html{scroll-behavior:auto}
-    *{transition:none !important}
-  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 
 <header>
   <div class="wrap bar">
-    <a class="brand" href="./">
-      <span class="mark">问</span>
-      <b>智能问数 Agent</b>
-    </a>
+    <a class="brand" href="./"><span class="mark">问</span><b>智能问数 Agent</b></a>
     <nav>
-      <a href="#what" class="hide-sm">做了什么</a>
       <a href="#shots" class="hide-sm">界面</a>
-      <a href="#run">本地运行</a>
+      <a href="#run">运行</a>
       <a href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">GitHub ↗</a>
     </nav>
   </div>
@@ -176,151 +117,70 @@
 <main>
   <div class="wrap">
     <div class="hero">
-      <div class="eyebrow">NL2SQL · 数据产品 · 2026</div>
+      <div class="eyebrow">NL2SQL · Data Product</div>
       <h1>用一句话，<br>问清楚经营数据。</h1>
-      <p class="lead">
-        业务人员用自然语言提问，系统先检索语义证据、再生成 SQL、经<b>三层校验</b>后执行，
-        返回<b>结论、指标、图与表</b>，并给出可展开的 SQL 与校验项。数据域决定你能看什么，每一次提问都留痕。
-      </p>
+      <p class="lead">自然语言问数：结论、图表、SQL 与校验依据，一条链路全部可查。</p>
       <div class="actions">
-        <a class="btn primary" href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">
-          查看源码 <span class="k">GitHub</span>
-        </a>
-        <a class="btn ghost" href="#run">
-          本地跑起来 <span class="k">make serve</span>
-        </a>
+        <a class="btn primary" href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">查看源码 <span class="k">GitHub</span></a>
+        <a class="btn ghost" href="#run">本地运行 <span class="k">make serve</span></a>
       </div>
     </div>
   </div>
 
   <div class="wrap">
     <div class="facts">
-      <div class="fact">
-        <div class="v">90.9<small>%</small></div>
-        <div class="k">在线评测准确率（149 / 164）</div>
-      </div>
-      <div class="fact">
-        <div class="v">3.1<small>s</small></div>
-        <div class="k">端到端 P50（P90 3.9s）</div>
-      </div>
-      <div class="fact">
-        <div class="v">47</div>
-        <div class="k">测试全绿（含租户隔离）</div>
-      </div>
-      <div class="fact">
-        <div class="v">10<small>/10</small></div>
-        <div class="k">危险请求拦截</div>
-      </div>
+      <div class="fact"><div class="v">90.9<small>%</small></div><div class="k">在线评测（149 / 164）</div></div>
+      <div class="fact"><div class="v">3.1<small>s</small></div><div class="k">端到端 P50</div></div>
+      <div class="fact"><div class="v">47</div><div class="k">测试全绿</div></div>
+      <div class="fact"><div class="v">100<small>%</small></div><div class="k">危险请求拦截</div></div>
     </div>
   </div>
 
-  <section id="what">
+  <section id="shots">
     <div class="wrap">
-      <div class="sec-head">
-        <h2>它做了什么</h2>
-        <div class="sec-note">合成保险数仓 · 11 表 · 4 万保单 · 57 万行保费</div>
-      </div>
-      <div class="grid-3">
-        <div class="cell">
-          <span class="idx">01 / 语义层</span>
-          <h3>33 张语义卡约束口径</h3>
-          <p>指标、表、关系、术语四类卡片参与检索，把"保费到底含不含退保"写进 Prompt，而不是靠模型猜。</p>
-        </div>
-        <div class="cell">
-          <span class="idx">02 / 护栏</span>
-          <h3>请求级 + SQL 级双层</h3>
-          <p>生成前拦截危险意图，生成后做 AST 校验：单语句、只读、表白名单、敏感字段、自动 LIMIT。</p>
-        </div>
-        <div class="cell">
-          <span class="idx">03 / 权限</span>
-          <h3>数据域在引擎层收口</h3>
-          <p>账号绑定渠道范围，校验阶段把受控表改写成带过滤的子查询——越权的行根本查不到，不靠模型自觉。</p>
-        </div>
-        <div class="cell">
-          <span class="idx">04 / 交互</span>
-          <h3>结果优先，过程可查</h3>
-          <p>结论、指标、图/表切换；右侧轨迹逐步给出耗时、召回证据、SQL 与校验项，回答可复制、可重跑。</p>
-        </div>
-        <div class="cell">
-          <span class="idx">05 / 运营</span>
-          <h3>审计、配额与多轮</h3>
-          <p>每次提问留痕（谁、问了什么、什么 SQL、几行、多少毫秒）；追问会显式改写问题，不静默继承条件。</p>
-        </div>
-        <div class="cell">
-          <span class="idx">06 / 评测</span>
-          <h3>164 题 + 四组消融</h3>
-          <p>gold SQL 现场复算，分类准确率、失败归因、消融表与成本全部写进报告，一条命令重跑。</p>
-        </div>
+      <h2>界面</h2>
+      <div class="shots">
+        <a class="shot big" href="docs/console.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/console.png" alt="控制台：对话历史、结论与图表、运行轨迹" loading="lazy"></div>
+          <div class="cap"><span>控制台</span></div>
+        </a>
+        <a class="shot" href="docs/scope.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/scope.png" alt="数据域生效，只返回有权限的渠道" loading="lazy"></div>
+          <div class="cap"><span>数据域</span></div>
+        </a>
+        <a class="shot" href="docs/login.png" target="_blank" rel="noopener">
+          <div class="frame"><img src="docs/login-card.png" alt="工号登录" loading="lazy"></div>
+          <div class="cap"><span>工号登录</span></div>
+        </a>
       </div>
     </div>
   </section>
 
-  <section id="shots">
+  <section>
     <div class="wrap">
-      <div class="sec-head">
-        <h2>界面</h2>
-        <div class="sec-note">真实后端 · DeepSeek 在线</div>
-      </div>
-      <div class="shots">
-        <a class="shot big" href="docs/console.png" target="_blank" rel="noopener">
-          <div class="frame"><img src="docs/console.png" alt="控制台：左侧对话历史，中间结论与图表，右侧运行轨迹" loading="lazy"></div>
-          <div class="cap"><span>控制台：对话历史 · 结论与图表 · 运行轨迹</span><span>1440 × 1100</span></div>
-        </a>
-        <a class="shot" href="docs/scope.png" target="_blank" rel="noopener">
-          <div class="frame"><img src="docs/scope.png" alt="数据域生效：同一问题只返回账号有权限的渠道" loading="lazy"></div>
-          <div class="cap"><span>数据域生效：只返回有权限的渠道</span><span>scope</span></div>
-        </a>
-        <a class="shot" href="docs/login.png" target="_blank" rel="noopener">
-          <div class="frame"><img src="docs/login-card.png" alt="工号登录页" loading="lazy"></div>
-          <div class="cap"><span>工号登录：账号决定数据域</span><span>login</span></div>
-        </a>
+      <div class="cards">
+        <div class="card"><h3>语义层约束口径</h3><p>33 张卡片定义指标、表、关系与术语，进 Prompt 前先检索。</p></div>
+        <div class="card"><h3>护栏与数据域</h3><p>请求级拦截 + AST 校验；越权的行在引擎层被过滤。</p></div>
+        <div class="card"><h3>每个数字可复核</h3><p>逐步耗时、召回证据、SQL 与校验项，全部可展开。</p></div>
       </div>
     </div>
   </section>
 
   <section id="run">
     <div class="wrap">
-      <div class="sec-head">
-        <h2>本地跑起来</h2>
-        <div class="sec-note">Python 3.11+ · macOS / Linux</div>
-      </div>
+      <h2>运行</h2>
       <div class="run">
         <div>
-          <p>不需要模型 Key 也能跑：没配 Key 时走离线模板基线，链路、护栏、数据域、审计都完整，只是不能任意改写问法。</p>
-          <ol>
-            <li><span class="li-body"><b>克隆与安装</b>生成虚拟环境、装依赖。</span></li>
-            <li><span class="li-body"><b>生成数据</b>合成数仓约 2 秒，写入 <code>data/warehouse.duckdb</code>。</span></li>
-            <li><span class="li-body"><b>启动</b>打开 <code>127.0.0.1:8000</code>，用登录页的演示账号进入。</span></li>
-            <li><span class="li-body"><b>接真模型（可选）</b>把 <code>DEEPSEEK_API_KEY</code> 写进 <code>.env</code>，顶栏会从"离线演示"变成"在线"。</span></li>
-          </ol>
+          <p>不需要模型 Key 也能跑，离线走模板基线；接上 Key 即为在线生成。</p>
+          <p>合成数仓 11 表、4 万保单、57 万行保费。</p>
         </div>
-        <pre><span class="c"># 1. 克隆与安装</span>
-git clone https://github.com/Tomo-Efficient/smart-query-agent.git
+        <pre>git clone https://github.com/Tomo-Efficient/smart-query-agent.git
 cd smart-query-agent
-make setup
-
-<span class="c"># 2. 生成合成数仓（约 2 秒）</span>
-make data
-
-<span class="c"># 3. 启动</span>
-make serve
+make setup &amp;&amp; make data &amp;&amp; make serve
 <span class="g"># → http://127.0.0.1:8000</span>
 
-<span class="c"># 4. 跑评测（可选）</span>
+<span class="c"># 评测（可选）</span>
 make eval</pre>
-      </div>
-    </div>
-  </section>
-
-  <section id="why">
-    <div class="wrap">
-      <div class="note">
-        <div class="tag">为什么没有在线 Demo</div>
-        <div>
-          <h3>它需要一个能跑 Python 的后端，而 GitHub Pages 只能托管静态文件</h3>
-          <p>真版本要连 DuckDB、调模型、做 AST 校验和数据域注入，这些都发生在服务端。所以这里给的是截图与源码，不是可以点的按钮。</p>
-          <p>想现场看，克隆下来 <code>make serve</code> 即可；早期那版纯前端演示保留在 <a href="legacy-demo.html">legacy-demo.html</a>，用模拟数据，可以点但不会真的查库。</p>
-        </div>
       </div>
     </div>
   </section>
@@ -328,11 +188,11 @@ make eval</pre>
 
 <footer>
   <div class="wrap foot">
-    <div>合成数据复现，数字与生产环境（85%+）分开口径，不混着说。</div>
+    <div>合成数据复现 · 与生产口径分开</div>
     <div>
       <a href="https://tomo-efficient.github.io/ai-product-portfolio/" target="_blank" rel="noopener">作品集</a>
       &nbsp;·&nbsp;
-      <a href="legacy-demo.html">早期静态演示</a>
+      <a href="legacy-demo.html">早期演示</a>
       &nbsp;·&nbsp;
       <a href="https://github.com/Tomo-Efficient/smart-query-agent" target="_blank" rel="noopener">GitHub</a>
     </div>
